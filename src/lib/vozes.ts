@@ -42,6 +42,16 @@ export const IDIOMAS: Idioma[] = [
       'Pega aquí tu propio contenido, elige la voz y ajusta la velocidad.\n' +
       'Durante la lectura, haz clic en cualquier palabra para seguir desde ahí.',
   },
+  {
+    codigo: 'de-DE',
+    prefixo: 'de',
+    nome: 'Deutsch',
+    sigla: 'DE',
+    exemplo:
+      'Einen Text laut vorlesen zu lassen hilft beim Überarbeiten vor der Veröffentlichung. ' +
+      'Fügen Sie hier Ihren eigenen Text ein, wählen Sie eine Stimme und stellen Sie das Tempo ein.\n' +
+      'Klicken Sie während des Vorlesens auf ein beliebiges Wort, um dort weiterzuhören.',
+  },
 ]
 
 export function idiomaPorCodigo(codigo: string): Idioma {

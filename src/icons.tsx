@@ -84,3 +84,17 @@ export const IconSpinner = svg(
     <path d="M21 12a9 9 0 0 0-9-9" />
   </>,
 )
+export const IconArrowDown = svg(<path d="M12 5v14m0 0 6-6m-6 6-6-6" />)
+export const IconNuvem = svg(
+  <>
+    <path d="M7 19a4.5 4.5 0 0 1-.4-9A6 6 0 0 1 18 10.5a3.9 3.9 0 0 1-.6 8.5z" />
+    <path d="M12 16v-5m0 0-2.2 2.2M12 11l2.2 2.2" />
+  </>,
+)
+export const IconTraduzir = svg(
+  <>
+    <path d="M3.5 6h8M7.5 4.5v1.5M9.5 6c-.4 3.4-2.6 6.2-6 7.5" />
+    <path d="M4.5 9.6c1 2 2.8 3.5 5 4.1" />
+    <path d="m12.5 20 4-9 4 9M13.8 17.2h5.4" />
+  </>,
+)

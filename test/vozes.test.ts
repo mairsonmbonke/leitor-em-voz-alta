@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { IDIOMAS, escolherVoz, idiomaPorCodigo, vozesDoIdioma } from '../src/lib/vozes.ts'
+import { vozNaturalDoIdioma } from '../src/lib/vozNatural.ts'
 
 /** Monta uma voz como o navegador entrega. */
 function voz(name: string, lang: string, extras: { localService?: boolean; padrao?: boolean } = {}) {
@@ -83,9 +84,16 @@ test('num aparelho da Apple, sobra a voz local de português', () => {
   assert.equal(escolherVoz(vozesDoIdioma(apple, PORTUGUES), null)!.name, 'Luciana')
 })
 
-test('os três idiomas oferecidos continuam de pé', () => {
+test('os quatro idiomas oferecidos continuam de pé', () => {
   assert.deepEqual(
     IDIOMAS.map((i) => i.codigo),
-    ['pt-BR', 'en-US', 'es-ES'],
+    ['pt-BR', 'en-US', 'es-ES', 'de-DE'],
   )
+})
+
+test('cada idioma tem uma voz natural para baixar', () => {
+  for (const idioma of IDIOMAS) {
+    assert.ok(vozNaturalDoIdioma(idioma.codigo), `sem voz natural para ${idioma.codigo}`)
+  }
+  assert.equal(vozNaturalDoIdioma('it-IT'), null)
 })

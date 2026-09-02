@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b0d12" />
+    <!--
+      A tradução automática do navegador troca os nós de texto por conta
+      própria e o React perde a referência deles, derrubando a tela inteira.
+      A tradução do conteúdo é feita dentro do programa, no botão "Traduzir".
+    -->
+    <meta name="google" content="notranslate" />
     <meta
       name="description"
       content="Leia textos em voz alta no navegador: português, inglês e espanhol, com escolha de voz, velocidade e destaque do trecho lido."
@@ -12,7 +18,7 @@
     <title>Leitura em voz alta</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root" translate="no" class="notranslate"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { dividirEmPalavras, trechoNaPosicao, type Palavra, type Trecho } from './lib/leitura'
 import { distribuirTempos, palavraNoTempo, type Tempo } from './lib/tempos'
-import { sintetizar, type VozNatural } from './lib/vozNatural'
+import { ErroDeVoz, sintetizar, type VozNatural } from './lib/vozNatural'
 import type { EstadoLeitura, Leitura } from './useLeitura'
 
 /**
@@ -44,6 +44,8 @@ export function useLeituraNatural(trechos: Trecho[], voz: VozNatural | null, vel
   const quadroRef = useRef(0)
   /** Frases já geradas, prontas para tocar. */
   const prontasRef = useRef(new Map<number, Promise<Blob>>())
+  /** A última fala falhou: o Continuar precisa gerar tudo de novo. */
+  const falhouRef = useRef(false)
 
   trechosRef.current = trechos
   vozRef.current = voz
@@ -179,13 +181,19 @@ export function useLeituraNatural(trechos: Trecho[], voz: VozNatural | null, vel
       let audio: Blob
       try {
         audio = await gerar(inicio === trecho.inicio ? trecho.inicio : null, texto)
-      } catch {
+      } catch (erro) {
         if (senha !== senhaRef.current) return
-        setErro('Não foi possível gerar a voz natural. Volte para a voz do aparelho e tente de novo.')
-        mudarEstado('parado')
+        // A leitura fica pausada exatamente aqui: nem volta ao começo do
+        // documento, nem perde a velocidade e o idioma escolhidos.
+        prontasRef.current.clear()
+        falhouRef.current = true
+        retomarRef.current = inicio
+        setErro(erro instanceof ErroDeVoz ? erro.message : 'A voz natural falhou neste aparelho.')
+        mudarEstado('pausado')
         setPreparando(false)
         return
       }
+      falhouRef.current = false
       if (senha !== senhaRef.current) return
 
       const tocador = pegarAudio()
@@ -253,16 +261,22 @@ export function useLeituraNatural(trechos: Trecho[], voz: VozNatural | null, vel
 
   const continuar = useCallback(() => {
     if (estadoRef.current !== 'pausado') return
-    const tocador = audioRef.current
-    if (!tocador) return
-    void tocador.play().catch(() => undefined)
+    // Depois de uma falha não há áudio para retomar: gera de novo do ponto.
+    if (falhouRef.current || !audioRef.current?.src) {
+      setErro(null)
+      void falar(retomarRef.current)
+      return
+    }
+    void audioRef.current.play().catch(() => undefined)
     mudarEstado('lendo')
     acompanhar()
-  }, [acompanhar, mudarEstado])
+  }, [acompanhar, falar, mudarEstado])
 
   const parar = useCallback(() => {
     limpar()
     prontasRef.current.clear()
+    falhouRef.current = false
+    setErro(null)
     mudarEstado('parado')
     setPreparando(false)
     setDestaque(null)

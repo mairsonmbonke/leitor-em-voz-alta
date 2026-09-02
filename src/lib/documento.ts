@@ -14,6 +14,12 @@ export interface ArquivoLido {
   texto: string
   /** Número de páginas, quando o formato tem essa informação. */
   paginas?: number
+  /**
+   * O arquivo não tem texto para copiar: as palavras estão dentro de imagens
+   * e só saem por reconhecimento (OCR). `imagem` é uma foto; `pdf` é um
+   * documento digitalizado, cujas páginas viram imagens.
+   */
+  precisaOcr?: 'imagem' | 'pdf'
 }
 
 /** O que o seletor de arquivos oferece. */
@@ -26,11 +32,22 @@ export const TIPOS_ACEITOS = [
   '.pdf',
   '.docx',
   '.odt',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.heic',
+  '.heif',
   'text/plain',
   'text/markdown',
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.oasis.opendocument.text',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
 ].join(',')
 
 /** Arquivos maiores que isto travariam a página. */
@@ -233,9 +250,9 @@ async function lerPdf(arquivo: File): Promise<ArquivoLido> {
   }
 
   const texto = juntarLinhas(partes.join('\n\n'))
-  if (texto.trim().length === 0) {
-    throw new ErroDeArquivo('Este PDF não tem texto selecionável — provavelmente é um documento digitalizado (imagem).')
-  }
+  // Sem texto por baixo, é um PDF digitalizado: as páginas viram imagens e
+  // passam pelo reconhecimento, quadro seguinte do fluxo.
+  if (texto.trim().length === 0) return { nome: arquivo.name, texto: '', paginas, precisaOcr: 'pdf' }
   return { nome: arquivo.name, texto, paginas }
 }
 
@@ -268,6 +285,9 @@ export async function extrairTexto(arquivo: File): Promise<ArquivoLido> {
       const xml = await lerZip(arquivo, 'content.xml')
       return { nome: arquivo.name, texto: textoDoOdt(xml) }
     }
+    if (ehArquivoDeImagem(tipo, arquivo.type)) {
+      return { nome: arquivo.name, texto: '', precisaOcr: 'imagem' }
+    }
     if (tipo === 'doc') {
       throw new ErroDeArquivo('O formato .doc (Word antigo) não é lido aqui. Salve como .docx ou PDF.')
     }
@@ -282,4 +302,82 @@ export async function extrairTexto(arquivo: File): Promise<ArquivoLido> {
     if (nome === 'InvalidPDFException') throw new ErroDeArquivo('Este PDF está corrompido ou não pôde ser aberto.')
     throw new ErroDeArquivo('Não foi possível ler este arquivo. Tente outro formato (PDF, .docx ou .txt).')
   }
+}
+
+/** Extensões e tipos de imagem que o programa aceita reconhecer. */
+function ehArquivoDeImagem(extensaoDoNome: string, tipo: string): boolean {
+  if (tipo.startsWith('image/')) return true
+  return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tif', 'tiff', 'heic', 'heif'].includes(extensaoDoNome)
+}
+
+/** O navegador consegue abrir esta imagem? (HEIC do iPhone costuma não abrir.) */
+export async function navegadorAbreImagem(imagem: Blob): Promise<boolean> {
+  try {
+    const bitmap = await createImageBitmap(imagem)
+    bitmap.close()
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Acima disto, reconhecer o documento inteiro levaria tempo demais. */
+export const MAXIMO_DE_PAGINAS_OCR = 50
+
+/**
+ * Transforma as páginas de um PDF em imagens, para o reconhecimento de texto.
+ *
+ * A escala 2 dá resolução suficiente para o OCR sem estourar a memória de um
+ * celular. Devolve no máximo `MAXIMO_DE_PAGINAS_OCR` páginas.
+ */
+export async function paginasComoImagens(
+  arquivo: File,
+  aoProgredir?: (fracao: number, pagina: number, total: number) => void,
+  sinal?: AbortSignal,
+): Promise<Blob[]> {
+  const pdfjs = await import('pdfjs-dist')
+  const { default: Trabalhador } = await import('pdfjs-dist/build/pdf.worker.min.mjs?worker')
+  if (!pdfjs.GlobalWorkerOptions.workerPort) pdfjs.GlobalWorkerOptions.workerPort = new Trabalhador()
+
+  let tarefa: ReturnType<typeof pdfjs.getDocument>
+  let documento: Awaited<ReturnType<typeof pdfjs.getDocument>['promise']>
+  try {
+    tarefa = pdfjs.getDocument({ data: new Uint8Array(await arquivo.arrayBuffer()) })
+    documento = await tarefa.promise
+  } catch {
+    throw new ErroDeArquivo('Não foi possível abrir as páginas deste PDF para reconhecer o texto.')
+  }
+  const total = Math.min(documento.numPages, MAXIMO_DE_PAGINAS_OCR)
+  const imagens: Blob[] = []
+
+  try {
+    for (let numero = 1; numero <= total; numero += 1) {
+      if (sinal?.aborted) break
+      const pagina = await documento.getPage(numero)
+      const viewport = pagina.getViewport({ scale: 2 })
+      const tela = document.createElement('canvas')
+      tela.width = Math.round(viewport.width)
+      tela.height = Math.round(viewport.height)
+      const pincel = tela.getContext('2d')
+      if (!pincel) throw new ErroDeArquivo('O navegador não conseguiu desenhar as páginas do PDF.')
+
+      try {
+        await pagina.render({ canvas: tela, canvasContext: pincel, viewport }).promise
+      } catch {
+        // Uma página que não desenha não interrompe o documento inteiro.
+        pagina.cleanup()
+        continue
+      }
+      const imagem = await new Promise<Blob | null>((pronto) => tela.toBlob(pronto, 'image/png'))
+      tela.width = 0
+      tela.height = 0
+      pagina.cleanup()
+      if (imagem) imagens.push(imagem)
+      aoProgredir?.(numero / total, numero, total)
+    }
+  } finally {
+    await tarefa.destroy()
+  }
+
+  return imagens
 }

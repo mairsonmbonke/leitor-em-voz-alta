@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Leitor } from './Leitor'
+import { Protecao } from './Protecao'
 import './styles/global.css'
 import './styles/leitor.css'
 
@@ -9,6 +10,8 @@ if (!container) throw new Error('Elemento #root não encontrado.')
 
 createRoot(container).render(
   <StrictMode>
-    <Leitor />
+    <Protecao>
+      <Leitor />
+    </Protecao>
   </StrictMode>,
 )
