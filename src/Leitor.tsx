@@ -119,9 +119,6 @@ export function Leitor() {
 
   useEffect(() => salvar(CHAVE_IDIOMA, idioma), [idioma])
   useEffect(() => salvar(CHAVE_VELOCIDADE, String(velocidade)), [velocidade])
-  useEffect(() => {
-    if (voz) salvar(chaveVoz(idioma), voz.voiceURI)
-  }, [voz, idioma])
 
   // Cada idioma lembra a própria voz.
   useEffect(() => setVozURI(ler(chaveVoz(idioma))), [idioma])
@@ -468,7 +465,11 @@ export function Leitor() {
               id="voz"
               className="text-input select"
               value={voz?.voiceURI ?? ''}
-              onChange={(evento) => setVozURI(evento.target.value)}
+              onChange={(evento) => {
+                // Escolha da pessoa: fica guardada para as próximas visitas.
+                setVozURI(evento.target.value)
+                salvar(chaveVoz(idioma), evento.target.value)
+              }}
               disabled={disponiveis.length === 0}
             >
               {disponiveis.length === 0 ? (
@@ -549,20 +550,24 @@ export function Leitor() {
         </div>
 
         <div className="transporte__botoes">
+          {/* O mesmo botão ouve, pausa e continua de onde parou. */}
           <button
             type="button"
             className="btn btn--primary transporte__principal"
-            onClick={comecar}
+            onClick={alternar}
             disabled={!TEM_VOZ || semTexto}
           >
-            <IconPlay size={15} /> Iniciar
+            {tocando ? (
+              <>
+                <IconPause size={15} /> Pausar
+              </>
+            ) : (
+              <>
+                <IconPlay size={15} /> {estado === 'pausado' ? 'Continuar' : 'Ouvir'}
+              </>
+            )}
           </button>
-          <button type="button" className="btn" onClick={pausar} disabled={!tocando}>
-            <IconPause size={15} /> Pausar
-          </button>
-          <button type="button" className="btn" onClick={continuar} disabled={estado !== 'pausado'}>
-            <IconPlay size={15} /> Continuar
-          </button>
+          {/* Parar é o único que volta ao começo do texto. */}
           <button type="button" className="btn btn--danger" onClick={parar} disabled={!ativo}>
             <IconStop size={13} /> Parar
           </button>

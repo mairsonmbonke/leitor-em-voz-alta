@@ -17,7 +17,10 @@ API) e os arquivos são abertos na máquina. Nada é enviado para servidor nenhu
 1. Cole ou digite o texto — ou toque em **Arquivo** para abrir um documento (no
    computador também dá para arrastar o arquivo para cima do texto).
 2. Escolha o **idioma**, a **voz** e a **velocidade** (de 0,5× a 2×).
-3. **Iniciar**, **Pausar**, **Continuar** e **Parar** comandam a leitura.
+3. Um botão só comanda a leitura: **Ouvir**, que vira **Pausar** e depois
+   **Continuar** — sempre do ponto exato em que parou. **Parar** é o único que
+   volta ao começo do texto (assim como abrir outro arquivo ou clicar numa
+   palavra para começar dali).
 4. Durante a leitura, **um clique em qualquer palavra continua dali** — serve
    para pular um trecho ou voltar e ouvir de novo.
 5. A frase em leitura fica realçada e a palavra falada, destacada; a página rola
@@ -25,6 +28,19 @@ API) e os arquivos são abertos na máquina. Nada é enviado para servidor nenhu
 
 O texto, o idioma, a voz e a velocidade ficam salvos no navegador para a próxima
 visita. `espaço` alterna entre ouvir e pausar, e `Esc` para.
+
+## A voz
+
+Na primeira vez, a voz é escolhida sozinha, da mais natural para a menos: a
+**Microsoft Thalita Multilingual** quando existe no aparelho (Windows com o Edge
+instalado), senão outra voz neural do português do Brasil — as antigas, de
+sonoridade mecânica (`Desktop`, `Compact`, eSpeak), ficam no fim da lista.
+Vozes do dialeto certo vêm antes: para um texto brasileiro, uma voz de pt-BR
+soa melhor que uma de Portugal, mesmo que a de Portugal seja mais natural.
+
+Escolher outra voz na lista guarda a preferência para as próximas visitas, uma
+por idioma. Se a voz guardada sumir do aparelho, a escolha automática volta a
+valer.
 
 Funciona no computador e no celular. No celular, vale usar "Adicionar à tela de
 início" pelo menu do navegador: a página abre como um aplicativo.

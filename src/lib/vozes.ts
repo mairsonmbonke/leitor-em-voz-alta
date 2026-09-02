@@ -54,24 +54,51 @@ function normalizar(lang: string): string {
 }
 
 /**
- * Vozes instaladas para um idioma, das mais adequadas para as menos: primeiro
- * as do dialeto exato (pt-BR antes de pt-PT), depois as que rodam no próprio
- * aparelho — que não dependem da internet e começam a falar mais rápido.
+ * A voz que lê português da forma mais fluente que encontramos. Quando ela
+ * existe no aparelho (Windows com Edge, em geral), é a escolha inicial.
+ */
+const PREFERIDA = 'thalita'
+
+/** Marcas de nome das vozes novas, sintetizadas por rede neural. */
+const NATURAIS = ['multilingual', 'natural', 'neural', 'online', 'premium', 'enhanced', 'siri', 'google']
+
+/** Marcas das vozes antigas, de sonoridade mecânica. */
+const ARTIFICIAIS = ['desktop', 'compact', 'espeak', 'pico', 'sapi']
+
+/**
+ * Nota de qualidade de uma voz, usada para ordenar a lista e escolher a
+ * inicial. Quanto maior, mais natural tende a ser a leitura.
+ */
+export function qualidadeDaVoz(voz: SpeechSynthesisVoice, idioma: Idioma): number {
+  const nome = voz.name.toLowerCase()
+  let nota = 0
+  if (nome.includes(PREFERIDA)) nota += 1000
+  // pt-BR antes de pt-PT quando o idioma escolhido é o do Brasil.
+  if (normalizar(voz.lang) === normalizar(idioma.codigo)) nota += 100
+  if (NATURAIS.some((marca) => nome.includes(marca))) nota += 40
+  if (ARTIFICIAIS.some((marca) => nome.includes(marca))) nota -= 60
+  if (voz.default) nota += 5
+  return nota
+}
+
+/**
+ * Vozes instaladas para um idioma, da que lê melhor para a que lê pior: a
+ * preferida primeiro, depois as do dialeto exato e as de som mais natural.
  */
 export function vozesDoIdioma(vozes: SpeechSynthesisVoice[], idioma: Idioma): SpeechSynthesisVoice[] {
-  const alvo = normalizar(idioma.codigo)
   return vozes
     .filter((voz) => normalizar(voz.lang).startsWith(idioma.prefixo))
     .sort((a, b) => {
-      const exata = Number(normalizar(b.lang) === alvo) - Number(normalizar(a.lang) === alvo)
-      if (exata !== 0) return exata
-      const local = Number(b.localService) - Number(a.localService)
-      if (local !== 0) return local
+      const nota = qualidadeDaVoz(b, idioma) - qualidadeDaVoz(a, idioma)
+      if (nota !== 0) return nota
       return a.name.localeCompare(b.name)
     })
 }
 
-/** A voz salva pela pessoa, se ainda existir; senão, a melhor do idioma. */
+/**
+ * A voz que a pessoa escolheu à mão, se ainda existir neste aparelho; senão,
+ * a primeira da lista — que já vem ordenada da melhor para a pior.
+ */
 export function escolherVoz(
   disponiveis: SpeechSynthesisVoice[],
   preferida: string | null,
