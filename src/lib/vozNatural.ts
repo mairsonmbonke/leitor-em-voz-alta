@@ -124,7 +124,17 @@ export class ErroDeVoz extends Error {
   }
 }
 
-/** Uma fala que demora mais que isto travou em algum lugar. */
+/**
+ * Quanto esperar por uma fala antes de dar o motor por travado.
+ *
+ * A **primeira** fala de cada sessão é diferente das outras: nela o navegador
+ * ainda baixa o conversor de fonemas e os dados de idioma (~18 MB) e carrega o
+ * modelo na memória. Numa rede lenta isso sozinho passa de 45 s, e um limite
+ * curto transformaria uma conexão ruim em "a voz natural falhou". Depois disso,
+ * cada frase leva segundos — aí um limite curto é justamente o que evita
+ * "Preparando…" para sempre.
+ */
+const LIMITE_DA_PRIMEIRA_FALA = 180_000
 const LIMITE_DE_ESPERA = 45_000
 
 interface Sessao {
@@ -151,12 +161,15 @@ interface Motor {
 let motor: Motor | null = null
 let sessao: Sessao | null = null
 let vozDaSessao = ''
+/** Esta sessão já falou alguma vez? (Ver `LIMITE_DA_PRIMEIRA_FALA`.) */
+let jaFalou = false
 
 /** Troca o motor por um de mentira. Usado pelos testes de interface. */
 export function definirMotor(falso: Motor | null): void {
   motor = falso
   sessao = null
   vozDaSessao = ''
+  jaFalou = false
 }
 
 function deTeste(): Motor | null {
@@ -589,6 +602,7 @@ async function pegarSessao(id: string): Promise<Sessao> {
     lib.TtsSession._instance = null
     sessao = new lib.TtsSession({ voiceId: id, wasmPaths: caminhosDoWasm() })
     vozDaSessao = id
+    jaFalou = false
     try {
       await sessao.waitReady
     } catch (erro) {
@@ -636,19 +650,32 @@ export async function sintetizar(id: string, texto: string): Promise<Blob> {
 
   // Se a fala travar (a biblioteca tem um caminho em que a promessa nunca se
   // resolve), é melhor um erro claro do que "Preparando…" para sempre.
+  const espera = jaFalou ? LIMITE_DE_ESPERA : LIMITE_DA_PRIMEIRA_FALA
   let relogio = 0
   const limite = new Promise<never>((_, falhar) => {
     relogio = window.setTimeout(
-      () => falhar(new ErroDeVoz('A voz natural demorou demais para responder neste aparelho.', 'tempo esgotado')),
-      LIMITE_DE_ESPERA,
+      () =>
+        falhar(
+          new ErroDeVoz(
+            jaFalou
+              ? 'A voz natural demorou demais para responder neste aparelho.'
+              : 'A voz natural não terminou de carregar a tempo. Numa rede lenta vale tentar de novo — ' +
+                'o que já veio fica guardado.',
+            `tempo esgotado (${espera / 1000}s, ${jaFalou ? 'fala comum' : 'primeira fala'})`,
+          ),
+        ),
+      espera,
     )
   })
 
   try {
-    return await Promise.race([atual.predict(texto), limite])
+    const audio = await Promise.race([atual.predict(texto), limite])
+    jaFalou = true
+    return audio
   } catch (erro) {
     // Uma sessão que falhou não costuma se recuperar sozinha.
     sessao = null
+    jaFalou = false
     throw comoErroDeVoz(erro)
   } finally {
     window.clearTimeout(relogio)

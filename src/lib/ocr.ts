@@ -93,8 +93,20 @@ export async function reconhecerImagem(
   const encerrar = () => void trabalhador?.terminate().catch(() => undefined)
   sinal?.addEventListener('abort', encerrar, { once: true })
 
+  // Encerrar o trabalhador mata o Web Worker por baixo, e o `recognize()` que
+  // estava a caminho pode simplesmente nunca responder. Sem esta corrida, o
+  // cancelamento deixaria uma promessa pendurada para sempre.
+  let cancelamento: () => void = () => {}
+  const cancelado = new Promise<never>((_, falhar) => {
+    cancelamento = () => falhar(new ErroDeOcr('Reconhecimento cancelado.'))
+    if (sinal?.aborted) cancelamento()
+    else sinal?.addEventListener('abort', cancelamento, { once: true })
+  })
+  // Uma promessa recusada que ninguém observa vira aviso no console.
+  cancelado.catch(() => undefined)
+
   try {
-    const resultado = await trabalhador.recognize(imagem)
+    const resultado = await Promise.race([trabalhador.recognize(imagem), cancelado])
     if (sinal?.aborted) throw new ErroDeOcr('Reconhecimento cancelado.')
     return limpar(resultado.data.text)
   } catch (erro) {
@@ -102,6 +114,7 @@ export async function reconhecerImagem(
     throw erro instanceof ErroDeOcr ? erro : new ErroDeOcr('O reconhecimento de texto falhou nesta imagem.')
   } finally {
     sinal?.removeEventListener('abort', encerrar)
+    sinal?.removeEventListener('abort', cancelamento)
     await trabalhador.terminate().catch(() => undefined)
   }
 }

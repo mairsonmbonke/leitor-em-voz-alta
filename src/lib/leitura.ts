@@ -54,6 +54,9 @@ const ABREVIACOES = new Set([
   'núm', 'num', 'no', 'nº', 'vol', 'cap', 'art', 'séc', 'sec', 'ed',
   'mr', 'mrs', 'ms', 'st', 'jr', 'vs', 'inc', 'approx', 'fig', 'eg', 'ie',
   'ud', 'uds', 'sres', 'ing', 'lic', 'pág',
+  'tel', 'cel', 'res', 'aprox', 'ref', 'depto', 'dept', 'apto', 'bl', 'end',
+  'proc', 'inss', 'máx', 'max', 'mín', 'min', 'dez', 'jan', 'fev', 'abr',
+  'ago', 'set', 'out', 'nov',
 ])
 
 function ehEspaco(c: string): boolean {

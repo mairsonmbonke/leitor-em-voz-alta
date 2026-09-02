@@ -185,19 +185,68 @@ interface RespostaMyMemory {
   responseDetails?: string
 }
 
+/** Uma pausa que respeita o cancelamento. */
+function esperar(ms: number, sinal?: AbortSignal): Promise<void> {
+  return new Promise((pronto, falhou) => {
+    const relogio = setTimeout(() => {
+      sinal?.removeEventListener('abort', cancelar)
+      pronto()
+    }, ms)
+    function cancelar() {
+      clearTimeout(relogio)
+      falhou(new ErroDeTraducao('Tradução cancelada.'))
+    }
+    sinal?.addEventListener('abort', cancelar, { once: true })
+  })
+}
+
+/**
+ * Quantas vezes insistir quando o MyMemory pede para esperar, e quanto esperar
+ * entre uma tentativa e outra. Um parágrafo que tropeça não pode derrubar a
+ * tradução inteira: o serviço é gratuito e limita quem pede rápido demais.
+ */
+const TENTATIVAS = 3
+const ESPERA_INICIAL = 1000
+
+/** Intervalo mínimo entre dois pedidos seguidos ao MyMemory. */
+const ESPERA_ENTRE_PEDIDOS = 120
+
+/** Erros em que insistir tem chance de dar certo. */
+function vaiAdiantarInsistir(status: number): boolean {
+  return status === 429 || status === 408 || status >= 500
+}
+
 async function traduzirNoMyMemory(texto: string, de: string, para: string, sinal?: AbortSignal): Promise<string> {
   const endereco =
     'https://api.mymemory.translated.net/get' +
     `?q=${encodeURIComponent(texto)}&langpair=${encodeURIComponent(`${curto(de)}|${curto(para)}`)}`
 
-  let resposta: Response
-  try {
-    resposta = await fetch(endereco, { signal: sinal })
-  } catch {
-    if (sinal?.aborted) throw new ErroDeTraducao('Tradução cancelada.')
-    throw new ErroDeTraducao('Não foi possível falar com o serviço de tradução. Confira a conexão.')
+  let resposta: Response | null = null
+  for (let tentativa = 1; tentativa <= TENTATIVAS; tentativa += 1) {
+    try {
+      resposta = await fetch(endereco, { signal: sinal })
+    } catch {
+      if (sinal?.aborted) throw new ErroDeTraducao('Tradução cancelada.')
+      // Uma queda de conexão também merece uma segunda chance.
+      if (tentativa === TENTATIVAS) {
+        throw new ErroDeTraducao('Não foi possível falar com o serviço de tradução. Confira a conexão.')
+      }
+      await esperar(ESPERA_INICIAL * 2 ** (tentativa - 1), sinal)
+      continue
+    }
+    if (resposta.ok || !vaiAdiantarInsistir(resposta.status) || tentativa === TENTATIVAS) break
+    // 429 (rápido demais) e 5xx (serviço tropeçando) passam com um respiro.
+    await esperar(ESPERA_INICIAL * 2 ** (tentativa - 1), sinal)
   }
+
+  if (!resposta) throw new ErroDeTraducao('Não foi possível falar com o serviço de tradução. Confira a conexão.')
   if (!resposta.ok) {
+    if (resposta.status === 429) {
+      throw new ErroDeTraducao(
+        'O serviço gratuito de tradução pediu para esperar (muitos pedidos seguidos). ' +
+          'Tente de novo daqui a pouco, ou use o Chrome ou o Edge no computador, que traduzem sem limite.',
+      )
+    }
     throw new ErroDeTraducao(`O serviço de tradução respondeu com erro (${resposta.status}).`)
   }
 
@@ -243,6 +292,8 @@ export async function traduzirParagrafos(
   }
 
   const traduzidos: string[] = []
+  /** O primeiro pedido não precisa esperar por ninguém. */
+  let primeiro = true
   try {
     for (let i = 0; i < paragrafos.length; i += 1) {
       if (sinal?.aborted) throw new ErroDeTraducao('Tradução cancelada.')
@@ -251,9 +302,14 @@ export async function traduzirParagrafos(
       const partes: string[] = []
       for (const pedaco of pedacos) {
         if (sinal?.aborted) throw new ErroDeTraducao('Tradução cancelada.')
-        partes.push(
-          doNavegador ? await doNavegador.translate(pedaco) : await traduzirNoMyMemory(pedaco, de, para, sinal),
-        )
+        if (doNavegador) {
+          partes.push(await doNavegador.translate(pedaco))
+          continue
+        }
+        // Um respiro entre pedidos: o MyMemory recusa quem chega em rajada.
+        if (primeiro) primeiro = false
+        else await esperar(ESPERA_ENTRE_PEDIDOS, sinal)
+        partes.push(await traduzirNoMyMemory(pedaco, de, para, sinal))
       }
       traduzidos.push(partes.join(' '))
       aoTraduzir?.({ fracao: (i + 1) / paragrafos.length, paragrafo: i + 1, total: paragrafos.length })
