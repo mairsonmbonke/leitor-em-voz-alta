@@ -46,6 +46,10 @@ const chaveVoz = (idioma: string) => `leitor.voz.${idioma}`
 
 /** Espera antes de aplicar um ajuste feito no meio da leitura. */
 const ESPERA_AJUSTE = 260
+/** Distância mínima entre o trecho lido e a borda da área de texto. */
+const FOLGA_ROLAGEM = 48
+/** Intervalo mínimo entre duas rolagens automáticas. */
+const ESPERA_ROLAGEM = 400
 
 function ler(chave: string): string | null {
   try {
@@ -135,6 +139,9 @@ export function Leitor() {
   }, [voz, velocidade, idioma, reiniciar])
 
   // ── Acompanhar a leitura na tela ──────────────────────────────────────
+  /** Quando a área do texto rolou pela última vez. */
+  const ultimaRolagem = useRef(0)
+
   useEffect(() => {
     const area = areaRef.current
     if (!area || !ativo) return
@@ -142,13 +149,21 @@ export function Leitor() {
       area.querySelector<HTMLElement>('[data-ativa="1"]') ?? area.querySelector<HTMLElement>('.frase--ativa')
     if (!alvo) return
 
+    // Só a área do texto rola; a conta é toda dentro dela.
     const caixa = alvo.getBoundingClientRect()
-    const folgaTopo = 90
-    const folgaBase = window.innerHeight - 180
-    if (caixa.top >= folgaTopo && caixa.bottom <= folgaBase) return
+    const janela = area.getBoundingClientRect()
+    if (caixa.top >= janela.top + FOLGA_ROLAGEM && caixa.bottom <= janela.bottom - FOLGA_ROLAGEM) return
+
+    // Um pedido novo no meio da animação anterior a reinicia, e com palavras
+    // em sequência a rolagem nunca sairia do lugar. Daí o intervalo mínimo.
+    const agora = Date.now()
+    if (agora - ultimaRolagem.current < ESPERA_ROLAGEM) return
+    ultimaRolagem.current = agora
 
     const suave = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    alvo.scrollIntoView({ block: 'center', behavior: suave ? 'smooth' : 'auto' })
+    // Deixa o trecho lido no meio da área visível.
+    const deslocamento = caixa.top - janela.top - (janela.height - caixa.height) / 2
+    area.scrollBy({ top: deslocamento, behavior: suave ? 'smooth' : 'auto' })
   }, [destaque, indice, ativo])
 
   // ── Ações ─────────────────────────────────────────────────────────────
@@ -341,11 +356,11 @@ export function Leitor() {
               >
                 {abrindo ? <IconSpinner size={14} className="spin" /> : <IconUpload size={14} />} Arquivo
               </button>
-              <button type="button" className="btn btn--sm btn--ghost" onClick={colar}>
-                <IconClipboard size={14} /> Colar
+              <button type="button" className="btn btn--sm btn--ghost" onClick={colar} aria-label="Colar">
+                <IconClipboard size={14} /> <span className="btn__texto">Colar</span>
               </button>
-              <button type="button" className="btn btn--sm btn--ghost" onClick={usarExemplo}>
-                <IconWand size={14} /> Exemplo
+              <button type="button" className="btn btn--sm btn--ghost" onClick={usarExemplo} aria-label="Exemplo">
+                <IconWand size={14} /> <span className="btn__texto">Exemplo</span>
               </button>
               <button
                 type="button"
@@ -427,7 +442,7 @@ export function Leitor() {
         </section>
 
         <aside className="cartao cartao--ajustes">
-          <div className="ajuste">
+          <div className="ajuste ajuste--idioma">
             <span className="field__label">Idioma</span>
             <div className="segmentado" role="group" aria-label="Idioma do texto">
               {IDIOMAS.map((item) => (
@@ -445,7 +460,7 @@ export function Leitor() {
             </div>
           </div>
 
-          <div className="ajuste">
+          <div className="ajuste ajuste--voz">
             <label className="field__label" htmlFor="voz">
               Voz
             </label>
@@ -474,7 +489,7 @@ export function Leitor() {
             </p>
           </div>
 
-          <div className="ajuste">
+          <div className="ajuste ajuste--velocidade">
             <div className="field__head">
               <label className="field__label" htmlFor="velocidade">
                 Velocidade
