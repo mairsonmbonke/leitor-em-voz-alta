@@ -597,7 +597,7 @@ export function Leitor() {
           </span>
           <span>
             <strong className="leitor__nome">Leitura em voz alta</strong>
-            <span className="leitor__tag">Português · English · Español</span>
+            <span className="leitor__tag">Português · English · Español · Deutsch</span>
           </span>
         </div>
       </header>
@@ -789,6 +789,7 @@ export function Leitor() {
                 </button>
               ) : null}
 
+              <div className={traducao ? 'painel-duplo' : 'painel-duplo painel-duplo--so-um'}>
               <div className={traducao ? 'leitura leitura--lado-a-lado' : 'leitura'} ref={areaRef} onClick={clicarNoTexto}>
                 {paragrafos.map((grupo) => (
                   <p className="leitura__paragrafo" key={grupo[0].inicio}>
@@ -821,6 +822,7 @@ export function Leitor() {
                   ))}
                 </div>
               ) : null}
+              </div>
             </>
           )}
 

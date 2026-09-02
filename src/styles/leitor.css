@@ -322,6 +322,17 @@ body {
   color: var(--text-faint);
 }
 
+/* A área do texto: um painel, ou dois quando há tradução. */
+.painel-duplo {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.painel-duplo > .leitura {
+  flex: 1;
+}
+
 /* A outra versão, ao lado, só para comparar. */
 .leitura--lado-a-lado {
   border-right: 1px solid var(--line-soft);
@@ -701,31 +712,10 @@ body {
     gap: 16px;
   }
 
-  /* Original e tradução dividem o cartão, para comparar de um olhar. */
-  .cartao--texto:has(.comparacao) .leitura,
-  .cartao--texto:has(.comparacao) .comparacao {
-    grid-row: 1;
-  }
-
-  .cartao--texto:has(.comparacao) > .leitura {
-    grid-column: 1;
-  }
-
+  /* Original e tradução dividem a área do texto, para comparar de um olhar. */
   .comparacao {
     display: block;
-    grid-column: 2;
-  }
-
-  .cartao--texto:has(.comparacao) {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
-  }
-
-  .cartao--texto:has(.comparacao) > .cartao__topo,
-  .cartao--texto:has(.comparacao) > .traducao-barra,
-  .cartao--texto:has(.comparacao) > .cartao__rodape {
-    grid-column: 1 / -1;
+    flex: 1;
   }
 
   /* O painel acompanha a altura da tela e rola sozinho se não couber. */

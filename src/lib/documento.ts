@@ -214,7 +214,35 @@ async function lerZip(arquivo: File, caminho: string): Promise<string> {
   return strFromU8(alvo)
 }
 
+/**
+ * O pdf.js 6 usa `Map.getOrInsertComputed` e `Map.getOrInsert`, duas adições
+ * recentes do JavaScript que navegadores um pouco mais antigos ainda não têm —
+ * inclusive iPhones que não estão na última versão do iOS. Sem elas, desenhar
+ * as páginas de um PDF falha com um erro incompreensível. Aqui as duas são
+ * completadas quando faltam, e ignoradas quando já existem.
+ */
+function completarMapa(): void {
+  const molde = Map.prototype as unknown as {
+    getOrInsert?: (chave: unknown, valor: unknown) => unknown
+    getOrInsertComputed?: (chave: unknown, calcular: (chave: unknown) => unknown) => unknown
+  }
+
+  if (typeof molde.getOrInsert !== 'function') {
+    molde.getOrInsert = function (this: Map<unknown, unknown>, chave, valor) {
+      if (!this.has(chave)) this.set(chave, valor)
+      return this.get(chave)
+    }
+  }
+  if (typeof molde.getOrInsertComputed !== 'function') {
+    molde.getOrInsertComputed = function (this: Map<unknown, unknown>, chave, calcular) {
+      if (!this.has(chave)) this.set(chave, calcular(chave))
+      return this.get(chave)
+    }
+  }
+}
+
 async function lerPdf(arquivo: File): Promise<ArquivoLido> {
+  completarMapa()
   const pdfjs = await import('pdfjs-dist')
   const { default: Trabalhador } = await import('pdfjs-dist/build/pdf.worker.min.mjs?worker')
   if (!pdfjs.GlobalWorkerOptions.workerPort) pdfjs.GlobalWorkerOptions.workerPort = new Trabalhador()
@@ -335,6 +363,7 @@ export async function paginasComoImagens(
   aoProgredir?: (fracao: number, pagina: number, total: number) => void,
   sinal?: AbortSignal,
 ): Promise<Blob[]> {
+  completarMapa()
   const pdfjs = await import('pdfjs-dist')
   const { default: Trabalhador } = await import('pdfjs-dist/build/pdf.worker.min.mjs?worker')
   if (!pdfjs.GlobalWorkerOptions.workerPort) pdfjs.GlobalWorkerOptions.workerPort = new Trabalhador()
@@ -349,6 +378,7 @@ export async function paginasComoImagens(
   }
   const total = Math.min(documento.numPages, MAXIMO_DE_PAGINAS_OCR)
   const imagens: Blob[] = []
+  let ultimaFalha: string | null = null
 
   try {
     for (let numero = 1; numero <= total; numero += 1) {
@@ -358,13 +388,15 @@ export async function paginasComoImagens(
       const tela = document.createElement('canvas')
       tela.width = Math.round(viewport.width)
       tela.height = Math.round(viewport.height)
-      const pincel = tela.getContext('2d')
-      if (!pincel) throw new ErroDeArquivo('O navegador não conseguiu desenhar as páginas do PDF.')
+      // Só de pedir o contexto o canvas fica pronto para o pdf.js desenhar.
+      if (!tela.getContext('2d')) throw new ErroDeArquivo('O navegador não conseguiu desenhar as páginas do PDF.')
 
       try {
-        await pagina.render({ canvas: tela, canvasContext: pincel, viewport }).promise
-      } catch {
-        // Uma página que não desenha não interrompe o documento inteiro.
+        await pagina.render({ canvas: tela, viewport }).promise
+      } catch (erro) {
+        // Uma página que não desenha não interrompe o documento inteiro, mas
+        // o motivo é guardado: se nenhuma sair, é ele que explica o porquê.
+        ultimaFalha = erro instanceof Error ? erro.message : String(erro)
         pagina.cleanup()
         continue
       }
@@ -379,5 +411,10 @@ export async function paginasComoImagens(
     await tarefa.destroy()
   }
 
+    if (imagens.length === 0 && !sinal?.aborted) {
+    throw new ErroDeArquivo(
+      `Não foi possível transformar as páginas deste PDF em imagem${ultimaFalha ? ` (${ultimaFalha})` : ''}.`,
+    )
+  }
   return imagens
 }
