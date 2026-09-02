@@ -1,0 +1,327 @@
+/* ── Tokens ─────────────────────────────────────────────────────────── */
+:root {
+  --bg-app: #0b0d12;
+  --bg-raised: #1e232f;
+  --bg-input: #0e1117;
+
+  --line: #242a38;
+  --line-soft: #1b202b;
+  --line-strong: #333b4d;
+
+  --text: #e8ecf4;
+  --text-dim: #9aa4b8;
+  --text-faint: #626d84;
+
+  --accent: #7c5cff;
+  --accent-hi: #9b82ff;
+  --accent-glow: rgba(124, 92, 255, 0.35);
+
+  --danger: #ff5c6c;
+
+  --radius-sm: 5px;
+  --radius: 9px;
+  --radius-lg: 14px;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.5);
+
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+/* ── Reset ──────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-hi);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2b3242;
+  border-radius: 99px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3b445a;
+  background-clip: padding-box;
+  border: 3px solid transparent;
+}
+
+/* ── Utilitários ────────────────────────────────────────────────────── */
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Botões ─────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  border: 1px solid var(--line-strong);
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.08s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: #262d3c;
+  border-color: #414b60;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--bg-raised);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.btn--primary {
+  background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 2px 14px var(--accent-glow);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ab95ff, #8a6dff);
+  border-color: transparent;
+}
+
+.btn--accent {
+  background: rgba(124, 92, 255, 0.14);
+  border-color: rgba(124, 92, 255, 0.4);
+  color: var(--accent-hi);
+}
+
+.btn--accent:hover:not(:disabled) {
+  background: rgba(124, 92, 255, 0.22);
+  border-color: rgba(124, 92, 255, 0.6);
+}
+
+.btn--danger {
+  color: var(--danger);
+  border-color: rgba(255, 92, 108, 0.35);
+  background: rgba(255, 92, 108, 0.1);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: rgba(255, 92, 108, 0.18);
+  border-color: rgba(255, 92, 108, 0.55);
+}
+
+.btn--sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* ── Campos ─────────────────────────────────────────────────────────── */
+.field__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field__label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.field__value {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent-hi);
+  font-variant-numeric: tabular-nums;
+}
+
+.field__hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.45;
+}
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent) var(--fill, 50%), #2a3141 var(--fill, 50%));
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--accent);
+  box-shadow: var(--shadow-1);
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 99px;
+  background: #2a3141;
+}
+
+input[type='range']::-moz-range-progress {
+  height: 4px;
+  border-radius: 99px;
+  background: var(--accent);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--accent);
+}
+
+input[type='range']:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.text-input {
+  height: 40px;
+  padding: 0 13px;
+  width: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--line-strong);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.text-input::placeholder {
+  color: var(--text-faint);
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.18);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

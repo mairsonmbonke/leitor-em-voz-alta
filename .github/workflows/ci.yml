@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    name: Tipos, build e testes
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Node 22: `npm test` roda os testes em TypeScript direto,
+      # com --experimental-strip-types, sem compilar antes.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Verificação de tipos e build
+        run: npm run build
+
+      - name: Testes
+        run: npm test
