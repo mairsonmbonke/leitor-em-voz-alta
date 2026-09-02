@@ -125,8 +125,10 @@ usa esse prefixo no build. Se o repositório for renomeado, ajuste a constante
 
 ## Compatibilidade
 
-Chrome, Edge, Safari (incluindo iPhone e iPad) e Chrome do Android. As vozes vêm
-do sistema operacional, então a lista muda de aparelho para aparelho — se não
-houver nenhuma voz do idioma escolhido, a página avisa. No Android o `pause()`
+Chrome, Edge, Safari (incluindo iPhone e iPad) e Chrome do Android. As vozes do
+aparelho vêm do sistema operacional, então a lista muda de um para outro — se
+não houver nenhuma voz do idioma escolhido, a página avisa. A voz natural pede
+WebAssembly e o sistema de arquivos privado do navegador (OPFS), presentes em
+todos esses navegadores em versão recente; onde faltar, o botão nem aparece. No Android o `pause()`
 do navegador costuma ser ignorado; nesse caso a fala é cortada e o **Continuar**
 recomeça exatamente da palavra em que parou.

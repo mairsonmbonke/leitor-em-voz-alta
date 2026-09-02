@@ -11,6 +11,8 @@ import {
 } from 'react'
 import { Frase } from './Frase'
 import { TEM_VOZ, useLeitura, useVozes } from './useLeitura'
+import { useLeituraNatural } from './useLeituraNatural'
+import { baixar, jaBaixadas, suportaVozNatural, vozNaturalDoIdioma } from './lib/vozNatural'
 import {
   VELOCIDADE_MAX,
   VELOCIDADE_MIN,
@@ -43,6 +45,10 @@ const CHAVE_TEXTO = 'leitor.texto'
 const CHAVE_IDIOMA = 'leitor.idioma'
 const CHAVE_VELOCIDADE = 'leitor.velocidade'
 const chaveVoz = (idioma: string) => `leitor.voz.${idioma}`
+const CHAVE_FONTE = 'leitor.fonte'
+
+/** De onde sai a voz: do sistema do aparelho ou do modelo baixado. */
+type Fonte = 'aparelho' | 'natural'
 
 /** Espera antes de aplicar um ajuste feito no meio da leitura. */
 const ESPERA_AJUSTE = 260
@@ -77,6 +83,9 @@ export function Leitor() {
   const [vozURI, setVozURI] = useState<string | null>(() => ler(chaveVoz(idioma)))
   const [velocidade, setVelocidade] = useState(() => limitarVelocidade(Number(ler(CHAVE_VELOCIDADE))))
   const [recado, setRecado] = useState<string | null>(null)
+  const [fonte, setFonte] = useState<Fonte>(() => (ler(CHAVE_FONTE) === 'natural' ? 'natural' : 'aparelho'))
+  const [baixada, setBaixada] = useState(false)
+  const [baixando, setBaixando] = useState<number | null>(null)
   const [arquivo, setArquivo] = useState<string | null>(null)
   const [abrindo, setAbrindo] = useState(false)
   const [arrastando, setArrastando] = useState(false)
@@ -90,9 +99,16 @@ export function Leitor() {
   const disponiveis = useMemo(() => vozesDoIdioma(vozes, idiomaAtual), [vozes, idiomaAtual])
   const voz = useMemo(() => escolherVoz(disponiveis, vozURI), [disponiveis, vozURI])
 
+  const naturalDoIdioma = vozNaturalDoIdioma(idioma)
+  const temNatural = suportaVozNatural() && naturalDoIdioma !== null
+  // Sem o modelo baixado, a voz do aparelho continua no comando.
+  const usandoNatural = fonte === 'natural' && temNatural && baixada
+
   const trechos = useMemo(() => segmentar(texto), [texto])
-  const leitura = useLeitura(trechos, { idioma, voz, velocidade })
-  const { estado, indice, destaque, posicao, iniciar, pausar, continuar, parar, reiniciar } = leitura
+  const doAparelho = useLeitura(trechos, { idioma, voz, velocidade })
+  const daNatural = useLeituraNatural(trechos, usandoNatural ? naturalDoIdioma : null, velocidade)
+  const leitura = usandoNatural ? daNatural : doAparelho
+  const { estado, indice, destaque, posicao, preparando, iniciar, pausar, continuar, parar, reiniciar } = leitura
 
   const paragrafos = useMemo(() => {
     const grupos: Trecho[][] = []
@@ -118,10 +134,50 @@ export function Leitor() {
   }, [texto])
 
   useEffect(() => salvar(CHAVE_IDIOMA, idioma), [idioma])
+  useEffect(() => salvar(CHAVE_FONTE, fonte), [fonte])
   useEffect(() => salvar(CHAVE_VELOCIDADE, String(velocidade)), [velocidade])
 
   // Cada idioma lembra a própria voz.
   useEffect(() => setVozURI(ler(chaveVoz(idioma))), [idioma])
+
+  // ── Voz natural ───────────────────────────────────────────────────────
+  // O modelo deste idioma já está guardado neste navegador?
+  useEffect(() => {
+    let valendo = true
+    setBaixada(false)
+    if (!naturalDoIdioma) return
+    void jaBaixadas().then((lista) => {
+      if (valendo) setBaixada(lista.includes(naturalDoIdioma.id))
+    })
+    return () => {
+      valendo = false
+    }
+  }, [naturalDoIdioma])
+
+  /** Baixa o modelo de voz deste idioma (uma vez por aparelho). */
+  const baixarVoz = useCallback(async () => {
+    if (!naturalDoIdioma) return
+    setBaixando(0)
+    setRecado(null)
+    try {
+      await baixar(naturalDoIdioma.id, (fracao) => setBaixando(fracao))
+      setBaixada(true)
+      setFonte('natural')
+    } catch {
+      setRecado('Não foi possível baixar a voz natural. Confira a conexão e tente de novo.')
+    } finally {
+      setBaixando(null)
+    }
+  }, [naturalDoIdioma])
+
+  // Trocar de motor no meio da leitura deixaria a voz antiga falando sozinha.
+  const motorAnterior = useRef(usandoNatural)
+  useEffect(() => {
+    if (motorAnterior.current === usandoNatural) return
+    motorAnterior.current = usandoNatural
+    doAparelho.parar()
+    daNatural.parar()
+  }, [usandoNatural, doAparelho, daNatural])
 
   // ── Ajustes no meio da leitura ────────────────────────────────────────
   const primeiro = useRef(true)
@@ -130,10 +186,13 @@ export function Leitor() {
       primeiro.current = false
       return
     }
+    // Na voz natural a velocidade é só a rotação do áudio, que o próprio
+    // motor ajusta; refazer a fala seria um solavanco à toa.
+    if (usandoNatural) return
     // A espera evita recomeçar a fala a cada passo do controle de velocidade.
     const relogio = window.setTimeout(reiniciar, ESPERA_AJUSTE)
     return () => window.clearTimeout(relogio)
-  }, [voz, velocidade, idioma, reiniciar])
+  }, [voz, velocidade, idioma, reiniciar, usandoNatural])
 
   // ── Acompanhar a leitura na tela ──────────────────────────────────────
   /** Quando a área do texto rolou pela última vez. */
@@ -461,18 +520,53 @@ export function Leitor() {
             <label className="field__label" htmlFor="voz">
               Voz
             </label>
+
+            {temNatural ? (
+              <div className="fonte" role="group" aria-label="De onde vem a voz">
+                <button
+                  type="button"
+                  className={usandoNatural ? 'fonte__item' : 'fonte__item fonte__item--on'}
+                  onClick={() => setFonte('aparelho')}
+                  aria-pressed={!usandoNatural}
+                >
+                  Do aparelho
+                </button>
+                <button
+                  type="button"
+                  className={usandoNatural ? 'fonte__item fonte__item--on' : 'fonte__item'}
+                  onClick={() => (baixada ? setFonte('natural') : void baixarVoz())}
+                  aria-pressed={usandoNatural}
+                  disabled={baixando !== null}
+                >
+                  {baixando !== null
+                    ? `Baixando ${Math.round(baixando * 100)}%`
+                    : baixada
+                      ? 'Natural'
+                      : `Natural · ${naturalDoIdioma?.tamanhoMB} MB`}
+                </button>
+              </div>
+            ) : null}
+
+            {baixando !== null ? (
+              <div className="transporte__trilha" aria-hidden="true">
+                <div className="transporte__preenchimento" style={{ width: `${baixando * 100}%` }} />
+              </div>
+            ) : null}
+
             <select
               id="voz"
               className="text-input select"
-              value={voz?.voiceURI ?? ''}
+              value={usandoNatural ? '' : (voz?.voiceURI ?? '')}
               onChange={(evento) => {
                 // Escolha da pessoa: fica guardada para as próximas visitas.
                 setVozURI(evento.target.value)
                 salvar(chaveVoz(idioma), evento.target.value)
               }}
-              disabled={disponiveis.length === 0}
+              disabled={disponiveis.length === 0 || usandoNatural}
             >
-              {disponiveis.length === 0 ? (
+              {usandoNatural ? (
+                <option value="">{naturalDoIdioma?.nome}</option>
+              ) : disponiveis.length === 0 ? (
                 <option value="">Nenhuma voz disponível</option>
               ) : (
                 disponiveis.map((item) => (
@@ -484,9 +578,13 @@ export function Leitor() {
               )}
             </select>
             <p className="field__hint">
-              {disponiveis.length > 0
-                ? `${disponiveis.length} ${disponiveis.length === 1 ? 'voz instalada' : 'vozes instaladas'} para ${idiomaAtual.nome}.`
-                : 'As vozes vêm do sistema operacional.'}
+              {usandoNatural
+                ? 'Voz baixada no aparelho: funciona igual em qualquer celular ou computador, sem internet e sem custo.'
+                : temNatural && !baixada
+                  ? `A voz natural baixa ${naturalDoIdioma?.tamanhoMB} MB uma vez e depois funciona offline — vale a pena onde as vozes do aparelho soam mecânicas, como no iPhone.`
+                  : disponiveis.length > 0
+                    ? `${disponiveis.length} ${disponiveis.length === 1 ? 'voz instalada' : 'vozes instaladas'} para ${idiomaAtual.nome}.`
+                    : 'As vozes vêm do sistema operacional.'}
             </p>
           </div>
 
@@ -559,7 +657,8 @@ export function Leitor() {
           >
             {tocando ? (
               <>
-                <IconPause size={15} /> Pausar
+                {preparando ? <IconSpinner size={15} className="spin" /> : <IconPause size={15} />}
+                {preparando ? 'Preparando…' : 'Pausar'}
               </>
             ) : (
               <>

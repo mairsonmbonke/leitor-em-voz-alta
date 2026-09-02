@@ -334,6 +334,37 @@ body {
   box-shadow: 0 2px 12px var(--accent-glow);
 }
 
+/* De onde vem a voz: do aparelho ou do modelo baixado. */
+.fonte {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  border: 1px solid var(--line-strong);
+}
+
+.fonte__item {
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-dim);
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.fonte__item:hover:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.fonte__item--on,
+.fonte__item--on:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+  color: #fff;
+}
+
 .select {
   appearance: none;
   padding-right: 34px;
@@ -535,6 +566,11 @@ body {
 
   .ajuste--voz .text-input {
     height: 36px;
+  }
+
+  .ajuste--voz .fonte {
+    flex: none;
+    width: 176px;
   }
 
   .ajuste--velocidade {

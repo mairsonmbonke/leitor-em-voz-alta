@@ -21,6 +21,8 @@ export interface Leitura {
   /** Trecho sendo falado, ou -1. */
   indice: number
   erro: string | null
+  /** A fala está sendo preparada (só a voz natural leva um instante). */
+  preparando: boolean
   iniciar: (posicao?: number) => void
   pausar: () => void
   continuar: () => void
@@ -241,7 +243,20 @@ export function useLeitura(trechos: Trecho[], ajustes: Ajustes): Leitura {
     }
   }, [])
 
-  return { estado, posicao, destaque, indice, erro, iniciar, pausar, continuar, parar, reiniciar }
+  // A voz do sistema fala na hora: nunca há espera para mostrar.
+  return {
+    estado,
+    posicao,
+    destaque,
+    indice,
+    erro,
+    preparando: false,
+    iniciar,
+    pausar,
+    continuar,
+    parar,
+    reiniciar,
+  }
 }
 
 /** Lista de vozes do navegador, que costuma chegar depois do primeiro render. */
