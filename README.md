@@ -10,8 +10,12 @@ OpenDocument (`.odt`) ou de texto (`.txt`, `.md`, `.csv`)**, trazido do **Google
 Drive**, ou **reconhecido dentro de fotos e PDFs digitalizados**. E pode ser
 **traduzido** entre os quatro idiomas, com o original preservado ao lado.
 
-Tudo roda no navegador de quem usa: a voz é a do próprio sistema (Web Speech
-API) e os arquivos são abertos na máquina. Nada é enviado para servidor nenhum.
+Quase tudo roda no navegador de quem usa: a voz, a leitura dos arquivos e o
+reconhecimento de texto acontecem na própria máquina. Duas exceções, e só
+quando pedidas: a **tradução** no Safari e no iPhone passa pelo MyMemory (o
+texto vai para lá), e o **Google Drive** conversa com o Google para trazer o
+arquivo que você escolher. O texto nunca é enviado a servidor nenhum durante a
+leitura.
 
 **No ar em:** https://mairsonmbonke.github.io/leitor-em-voz-alta/
 
