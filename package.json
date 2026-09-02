@@ -5,13 +5,16 @@
   "type": "module",
   "description": "Leitura de textos em voz alta no navegador, com destaque do trecho lido",
   "scripts": {
+    "predev": "node scripts/preparar-motor.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/preparar-motor.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "node --experimental-strip-types --test \"test/*.test.ts\"",
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@diffusionstudio/piper-wasm": "^1.0.0",
     "@mintplex-labs/piper-tts-web": "^1.0.5",
     "fflate": "^0.8.3",
     "pdfjs-dist": "^6.3.289",

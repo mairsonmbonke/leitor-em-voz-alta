@@ -12,7 +12,14 @@ import {
 import { Frase } from './Frase'
 import { TEM_VOZ, useLeitura, useVozes } from './useLeitura'
 import { useLeituraNatural } from './useLeituraNatural'
-import { baixar, jaBaixadas, suportaVozNatural, vozNaturalDoIdioma } from './lib/vozNatural'
+import {
+  ErroDeVoz,
+  baixar,
+  jaBaixadas,
+  suportaVozNatural,
+  vozNaturalDoIdioma,
+  type Andamento,
+} from './lib/vozNatural'
 import {
   VELOCIDADE_MAX,
   VELOCIDADE_MIN,
@@ -70,6 +77,19 @@ const FOLGA_ROLAGEM = 48
 /** Intervalo mínimo entre duas rolagens automáticas. */
 const ESPERA_ROLAGEM = 400
 
+/** Bytes em megabytes, do jeito que se lê. */
+function emMB(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** O que dizer enquanto a voz natural é preparada. */
+function recadoDoDownload(andamento: Andamento): string {
+  if (andamento.etapa === 'ajustes') return 'Buscando os ajustes da voz…'
+  if (andamento.etapa === 'guardando') return 'Guardando a voz no aparelho…'
+  if (andamento.total > 0) return `Baixando a voz: ${emMB(andamento.baixados)} de ${emMB(andamento.total)}`
+  return `Baixando a voz: ${emMB(andamento.baixados)}`
+}
+
 function ler(chave: string): string | null {
   try {
     return localStorage.getItem(chave)
@@ -98,7 +118,12 @@ export function Leitor() {
   const [recado, setRecado] = useState<string | null>(null)
   const [fonte, setFonte] = useState<Fonte>(() => (ler(CHAVE_FONTE) === 'natural' ? 'natural' : 'aparelho'))
   const [baixada, setBaixada] = useState(false)
-  const [baixando, setBaixando] = useState<number | null>(null)
+  const [baixando, setBaixando] = useState<Andamento | null>(null)
+  /** A voz natural falhou: a mensagem para a tela e a explicação técnica. */
+  const [falhaDaVoz, setFalhaDaVoz] = useState<{ mensagem: string; detalhe: string } | null>(null)
+  const [verDetalhe, setVerDetalhe] = useState(false)
+  /** Como desistir de um download de 60 MB que está demorando. */
+  const baixadorRef = useRef<AbortController | null>(null)
   const [arquivo, setArquivo] = useState<string | null>(null)
   /** A tela acompanha a leitura? Uma rolagem manual desliga isto. */
   const [acompanhando, setAcompanhando] = useState(true)
@@ -107,11 +132,25 @@ export function Leitor() {
   /** Qual das duas versões está sendo lida e mostrada. */
   const [versao, setVersao] = useState<'original' | 'traducao'>('original')
   const [destino, setDestino] = useState('en-US')
+  /** Idioma de origem escolhido à mão; `null` significa "descobrir sozinho". */
+  const [origemManual, setOrigemManual] = useState<string | null>(null)
+  /** O que a descoberta automática encontrou no texto atual. */
+  const [detectado, setDetectado] = useState<string | null>(null)
+  /**
+   * O painel de tradução está aberto? No computador sim, desde o começo. No
+   * celular ele começa fechado: a altura da tela é curta e o texto precisa
+   * dela — o botão "Traduzir" abre e fecha.
+   */
+  const [traducaoAberta, setTraducaoAberta] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 900px)').matches,
+  )
   /** Andamento de uma tarefa demorada (tradução ou reconhecimento). */
   const [tarefa, setTarefa] = useState<{ nome: string; etapa: string; fracao: number } | null>(null)
   /** Como cancelar a tarefa em andamento. */
   const cancelador = useRef<AbortController | null>(null)
-  const [pedindoDrive, setPedindoDrive] = useState(false)
+  /** A conta do Google conectada, quando existe. */
+  const [contaDrive, setContaDrive] = useState<drive.SessaoDoDrive | null>(() => drive.sessaoAtual())
+  const [conectandoDrive, setConectandoDrive] = useState(false)
   const [abrindo, setAbrindo] = useState(false)
   const [arrastando, setArrastando] = useState(false)
 
@@ -151,7 +190,7 @@ export function Leitor() {
     return grupos
   }, [trechos])
 
-  const palavras = useMemo(() => contarPalavras(texto), [texto])
+  const palavras = useMemo(() => contarPalavras(textoAtivo), [textoAtivo])
   const andamento = progresso(trechos, posicao)
   const restante = estimarSegundos(palavras * (1 - andamento), velocidade)
   const tocando = estado === 'lendo'
@@ -171,6 +210,20 @@ export function Leitor() {
   // Cada idioma lembra a própria voz.
   useEffect(() => setVozURI(ler(chaveVoz(idiomaAtivo))), [idiomaAtivo])
 
+  // ── Idioma do texto ───────────────────────────────────────────────────
+  // Descoberto sozinho a cada mudança do texto — digitado, colado, aberto de
+  // um arquivo ou reconhecido numa foto, tanto faz. A espera evita refazer a
+  // conta a cada tecla. Quem escolheu o idioma à mão fica de fora disto.
+  useEffect(() => {
+    if (origemManual !== null) return
+    const espera = window.setTimeout(() => {
+      const descoberto = detectarIdioma(texto)
+      setDetectado(descoberto)
+      if (descoberto) setIdioma(descoberto)
+    }, 300)
+    return () => window.clearTimeout(espera)
+  }, [texto, origemManual])
+
   // ── Voz natural ───────────────────────────────────────────────────────
   // O modelo deste idioma já está guardado neste navegador?
   useEffect(() => {
@@ -188,18 +241,38 @@ export function Leitor() {
   /** Baixa o modelo de voz deste idioma (uma vez por aparelho). */
   const baixarVoz = useCallback(async () => {
     if (!naturalDoIdioma) return
-    setBaixando(0)
+    const controle = new AbortController()
+    baixadorRef.current = controle
+    setBaixando({ etapa: 'ajustes', baixados: 0, total: 0 })
+    setFalhaDaVoz(null)
+    setVerDetalhe(false)
     setRecado(null)
     try {
-      await baixar(naturalDoIdioma.id, (fracao) => setBaixando(fracao))
+      await baixar(naturalDoIdioma.id, (andamento) => setBaixando(andamento), controle.signal)
       setBaixada(true)
       setFonte('natural')
-    } catch {
-      setRecado('Não foi possível baixar a voz natural. Confira a conexão e tente de novo.')
+    } catch (erro) {
+      if (controle.signal.aborted) return
+      // A explicação vem pronta de `vozNatural.ts`, que sabe qual arquivo
+      // falhou e por quê. O detalhe técnico fica guardado para quem quiser ver.
+      setFalhaDaVoz(
+        erro instanceof ErroDeVoz
+          ? { mensagem: erro.message, detalhe: erro.detalhe }
+          : { mensagem: 'Não foi possível preparar a voz natural.', detalhe: String(erro) },
+      )
+      if (erro instanceof ErroDeVoz && erro.detalhe) console.warn('[voz natural]', erro.detalhe)
     } finally {
+      baixadorRef.current = null
       setBaixando(null)
     }
   }, [naturalDoIdioma])
+
+  /** Desiste do download sem mexer no texto nem na leitura. */
+  const cancelarDownload = useCallback(() => {
+    baixadorRef.current?.abort()
+    baixadorRef.current = null
+    setBaixando(null)
+  }, [])
 
   // Trocar de motor no meio da leitura deixaria a voz antiga falando sozinha.
   const motorAnterior = useRef(usandoNatural)
@@ -253,7 +326,10 @@ export function Leitor() {
     // Só a área do texto rola; a conta é toda dentro dela.
     const caixa = alvo.getBoundingClientRect()
     const janela = area.getBoundingClientRect()
-    if (caixa.top >= janela.top + FOLGA_ROLAGEM && caixa.bottom <= janela.bottom - FOLGA_ROLAGEM) return
+    // Numa tela baixa a área do texto é curta: a folga encolhe junto, senão
+    // não sobra lugar nenhum onde o trecho pudesse caber.
+    const folga = Math.min(FOLGA_ROLAGEM, janela.height / 4)
+    if (caixa.top >= janela.top + folga && caixa.bottom <= janela.bottom - folga) return
 
     // Um pedido novo no meio da animação anterior a reinicia, e com palavras
     // em sequência a rolagem nunca sairia do lugar. Daí o intervalo mínimo.
@@ -342,15 +418,36 @@ export function Leitor() {
    * Põe um texto novo em leitura. A tradução antiga não vale mais, e o idioma
    * é adivinhado — quem discordar corrige nos botões PT/EN/ES/DE.
    */
-  const aplicarTexto = useCallback((novo: string, nomeDoArquivo: string | null) => {
-    setTexto(novo)
-    setTraducao(null)
-    setVersao('original')
-    setArquivo(nomeDoArquivo)
-    setEditando(false)
-    const descoberto = detectarIdioma(novo)
-    if (descoberto) setIdioma(descoberto)
-  }, [])
+  const aplicarTexto = useCallback(
+    (novo: string, nomeDoArquivo: string | null) => {
+      setTexto(novo)
+      setTraducao(null)
+      setVersao('original')
+      setArquivo(nomeDoArquivo)
+      setEditando(false)
+      const descoberto = detectarIdioma(novo)
+      setDetectado(descoberto)
+      // Quem escolheu o idioma à mão manda mais que a descoberta automática.
+      if (descoberto && origemManual === null) setIdioma(descoberto)
+    },
+    [origemManual],
+  )
+
+  /** Troca o idioma do original (pelos botões ou pela lista da tradução). */
+  const escolherOrigem = useCallback(
+    (codigo: string | null) => {
+      setOrigemManual(codigo)
+      if (codigo) {
+        setIdioma(codigo)
+        return
+      }
+      // Voltou para "detectar automaticamente": vale refazer a descoberta.
+      const descoberto = detectarIdioma(texto)
+      setDetectado(descoberto)
+      if (descoberto) setIdioma(descoberto)
+    },
+    [texto],
+  )
 
   /** Abre um PDF, Word, texto — ou reconhece as palavras de uma imagem. */
   const abrirArquivo = useCallback(
@@ -463,6 +560,7 @@ export function Leitor() {
         setTraducao({ de: idioma, para, texto: traduzidos.join('\n') })
         setVersao('traducao')
         setDestino(para)
+        setTraducaoAberta(true)
       } catch (erro) {
         setRecado(erro instanceof ErroDeTraducao ? erro.message : 'Não foi possível traduzir o texto.')
       } finally {
@@ -484,27 +582,101 @@ export function Leitor() {
     [parar, versao],
   )
 
-  // ── Google Drive ──────────────────────────────────────────────────────
-  const abrirDoDrive = useCallback(async () => {
-    const credenciais = drive.lerCredenciais()
-    if (!credenciais) {
-      setPedindoDrive(true)
-      return
+  /**
+   * "Ouvir original" e "Ouvir tradução".
+   *
+   * Trocar de versão troca o texto, as frases e a voz — tudo isso só existe no
+   * próximo desenho da tela. Por isso o pedido fica anotado aqui e a leitura
+   * começa no efeito abaixo, já com a versão certa no lugar.
+   */
+  const pedidoDeLeitura = useRef(false)
+  const ouvirVersao = useCallback(
+    (qual: 'original' | 'traducao') => {
+      setEditando(false)
+      setAcompanhando(true)
+      // Já é esta a versão à vista: basta ler do começo dela.
+      if (qual === versao) {
+        if (trechos.length > 0) iniciar(trechos[0].inicio)
+        return
+      }
+      parar()
+      setVersao(qual)
+      pedidoDeLeitura.current = true
+    },
+    [iniciar, parar, trechos, versao],
+  )
+
+  useEffect(() => {
+    if (!pedidoDeLeitura.current) return
+    pedidoDeLeitura.current = false
+    if (trechos.length > 0) iniciar(trechos[0].inicio)
+  }, [versao, trechos, iniciar])
+
+  // Traduzir para o mesmo idioma não faz sentido: o destino se afasta sozinho.
+  useEffect(() => {
+    if (destino === idioma) {
+      const outro = IDIOMAS.find((item) => item.codigo !== idioma)
+      if (outro) setDestino(outro.codigo)
     }
+  }, [destino, idioma])
+
+  // ── Google Drive ──────────────────────────────────────────────────────
+  // A conta conectada é lembrada entre visitas; a tela acompanha as mudanças.
+  useEffect(() => drive.aoMudarSessao(setContaDrive), [])
+
+  const falarDoDrive = useCallback((erro: unknown) => {
+    setRecado(erro instanceof drive.ErroDoDrive ? erro.message : 'Não foi possível falar com o Google Drive.')
+  }, [])
+
+  /** Abre a janela do Google para escolher um arquivo e o carrega. */
+  const escolherNoDrive = useCallback(async () => {
     setRecado(null)
     setAbrindo(true)
     try {
-      const escolhido = await drive.escolherArquivo(credenciais)
+      const escolhido = await drive.escolherArquivo()
       if (!escolhido) return
-      const baixado = await drive.baixarArquivo(escolhido, credenciais)
+      const baixado = await drive.baixarArquivo(escolhido)
       setAbrindo(false)
+      // Daqui para a frente é o mesmo caminho de um arquivo do computador.
       await abrirArquivo(baixado)
     } catch (erro) {
-      setRecado(erro instanceof drive.ErroDoDrive ? erro.message : 'Não foi possível abrir o arquivo do Google Drive.')
+      falarDoDrive(erro)
     } finally {
       setAbrindo(false)
     }
-  }, [abrirArquivo])
+  }, [abrirArquivo, falarDoDrive])
+
+  /** Um toque só: entra na conta (se precisar) e já abre o seletor. */
+  const abrirDoDrive = useCallback(async () => {
+    setRecado(null)
+    setConectandoDrive(true)
+    try {
+      await drive.conectar()
+    } catch (erro) {
+      falarDoDrive(erro)
+      return
+    } finally {
+      setConectandoDrive(false)
+    }
+    await escolherNoDrive()
+  }, [escolherNoDrive, falarDoDrive])
+
+  const trocarContaDoDrive = useCallback(async () => {
+    setRecado(null)
+    setConectandoDrive(true)
+    try {
+      await drive.trocarConta()
+    } catch (erro) {
+      falarDoDrive(erro)
+    } finally {
+      setConectandoDrive(false)
+    }
+  }, [falarDoDrive])
+
+  const desconectarDoDrive = useCallback(async () => {
+    setRecado(null)
+    await drive.desconectar()
+  }, [])
 
   const soltarArquivo = useCallback(
     (evento: DragEvent<HTMLElement>) => {
@@ -586,7 +758,7 @@ export function Leitor() {
     ? 'Este navegador não tem leitura em voz alta. Tente o Chrome, o Edge ou o Safari mais recentes.'
     : semVoz
       ? `Nenhuma voz de ${idiomaAtual.nome} está instalada neste aparelho. Escolha outro idioma ou instale a voz nas configurações do sistema.`
-      : (leitura.erro ?? recado)
+      : (leitura.erro ?? falhaDaVoz?.mensagem ?? recado)
 
   return (
     <div className="leitor">
@@ -650,17 +822,19 @@ export function Leitor() {
                 type="button"
                 className="btn btn--sm"
                 onClick={() => void abrirDoDrive()}
-                disabled={abrindo}
-                title="Abrir um arquivo do Google Drive"
+                disabled={abrindo || conectandoDrive}
+                title={contaDrive ? `Abrir um arquivo do Drive de ${contaDrive.conta ?? 'sua conta'}` : 'Conectar ao Google Drive'}
               >
-                <IconNuvem size={14} /> <span className="btn__texto">Drive</span>
+                <IconNuvem size={14} />{' '}
+                <span className="btn__texto">{contaDrive ? 'Drive' : 'Conectar ao Drive'}</span>
               </button>
               <button
                 type="button"
-                className="btn btn--sm btn--accent"
-                onClick={() => void traduzir(destino)}
-                disabled={semTexto || tarefa !== null || mostrandoTraducao}
-                title="Traduzir o texto"
+                className={traducaoAberta ? 'btn btn--sm btn--accent' : 'btn btn--sm'}
+                onClick={() => setTraducaoAberta((aberta) => !aberta)}
+                disabled={semTexto}
+                aria-expanded={traducaoAberta}
+                title="Escolher os idiomas e traduzir"
               >
                 <IconTraduzir size={14} /> <span className="btn__texto">Traduzir</span>
               </button>
@@ -682,25 +856,93 @@ export function Leitor() {
             </div>
           </div>
 
-          {traducao || tarefa ? (
+          {/* Tradução: os dois idiomas e o botão, à vista enquanto o painel
+              estiver aberto — e sempre que já houver uma tradução. */}
+          {!editando && !semTexto && (traducaoAberta || traducao) ? (
             <div className="traducao-barra">
+              <div className="traducao-barra__linha">
+                <label className="traducao-campo">
+                  <span className="field__label">Idioma original</span>
+                  <select
+                    className="text-input select"
+                    value={origemManual ?? 'auto'}
+                    onChange={(evento) =>
+                      escolherOrigem(evento.target.value === 'auto' ? null : evento.target.value)
+                    }
+                  >
+                    <option value="auto">
+                      Detectar automaticamente
+                      {origemManual === null && detectado ? ` · ${idiomaPorCodigo(detectado).nome}` : ''}
+                    </option>
+                    {IDIOMAS.map((item) => (
+                      <option key={item.codigo} value={item.codigo}>
+                        {item.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="traducao-campo">
+                  <span className="field__label">Traduzir para</span>
+                  <select
+                    className="text-input select"
+                    value={destino}
+                    onChange={(evento) => setDestino(evento.target.value)}
+                  >
+                    {/* O destino nunca pode ser o mesmo idioma do original. */}
+                    {IDIOMAS.filter((item) => item.codigo !== idioma).map((item) => (
+                      <option key={item.codigo} value={item.codigo}>
+                        {item.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <button
+                  type="button"
+                  className="btn btn--accent traducao-barra__botao"
+                  onClick={() => void traduzir(destino)}
+                  disabled={tarefa !== null || destino === idioma}
+                >
+                  <IconTraduzir size={15} /> Traduzir
+                </button>
+              </div>
+
+              <p className="traducao-barra__nota">
+                {origemManual === null
+                  ? detectado
+                    ? `Idioma identificado no texto: ${idiomaPorCodigo(detectado).nome}. Se estiver errado, escolha o certo na lista.`
+                    : 'Não deu para identificar o idioma sozinho — escolha o idioma original na lista.'
+                  : `Idioma original escolhido por você: ${idiomaPorCodigo(idioma).nome}.`}
+              </p>
+
               {traducao ? (
-                <div className="abas" role="group" aria-label="Versão do texto">
-                  <button
-                    type="button"
-                    className={mostrandoTraducao ? 'abas__item' : 'abas__item abas__item--on'}
-                    onClick={() => trocarVersao('original')}
-                    aria-pressed={!mostrandoTraducao}
-                  >
-                    Original · {idiomaPorCodigo(traducao.de).sigla}
+                <div className="traducao-barra__linha">
+                  <div className="abas" role="group" aria-label="Versão do texto">
+                    <button
+                      type="button"
+                      className={mostrandoTraducao ? 'abas__item' : 'abas__item abas__item--on'}
+                      onClick={() => trocarVersao('original')}
+                      aria-pressed={!mostrandoTraducao}
+                    >
+                      Original · {idiomaPorCodigo(traducao.de).sigla}
+                    </button>
+                    <button
+                      type="button"
+                      className={mostrandoTraducao ? 'abas__item abas__item--on' : 'abas__item'}
+                      onClick={() => trocarVersao('traducao')}
+                      aria-pressed={mostrandoTraducao}
+                    >
+                      Tradução · {idiomaPorCodigo(traducao.para).sigla}
+                    </button>
+                  </div>
+
+                  {/* Uma versão de cada vez: quem começa, encerra a anterior. */}
+                  <button type="button" className="btn btn--sm" onClick={() => ouvirVersao('original')}>
+                    <IconPlay size={13} /> Ouvir original
                   </button>
-                  <button
-                    type="button"
-                    className={mostrandoTraducao ? 'abas__item abas__item--on' : 'abas__item'}
-                    onClick={() => trocarVersao('traducao')}
-                    aria-pressed={mostrandoTraducao}
-                  >
-                    Tradução · {idiomaPorCodigo(traducao.para).sigla}
+                  <button type="button" className="btn btn--sm" onClick={() => ouvirVersao('traducao')}>
+                    <IconPlay size={13} /> Ouvir tradução
                   </button>
                 </div>
               ) : null}
@@ -717,25 +959,7 @@ export function Leitor() {
                     Cancelar
                   </button>
                 </div>
-              ) : (
-                <label className="traducao-barra__novo">
-                  <span className="field__label">Traduzir para</span>
-                  <select
-                    className="text-input select"
-                    value={destino}
-                    onChange={(evento) => {
-                      setDestino(evento.target.value)
-                      void traduzir(evento.target.value)
-                    }}
-                  >
-                    {IDIOMAS.filter((item) => item.codigo !== idioma).map((item) => (
-                      <option key={item.codigo} value={item.codigo}>
-                        {item.nome}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
+              ) : null}
             </div>
           ) : null}
 
@@ -769,10 +993,15 @@ export function Leitor() {
             <textarea
               ref={campoRef}
               className="campo-texto"
-              value={texto}
+              value={textoAtivo}
               onChange={(evento) => {
-                setTexto(evento.target.value)
-                setArquivo(null)
+                const novo = evento.target.value
+                // Editando a tradução, o original fica intacto — e vice-versa.
+                if (mostrandoTraducao && traducao) setTraducao({ ...traducao, texto: novo })
+                else {
+                  setTexto(novo)
+                  setArquivo(null)
+                }
               }}
               placeholder={
                 'Cole aqui o texto que você quer ouvir — ou toque em Arquivo para abrir um PDF, um Word (.docx) ou um .txt.\n\n' +
@@ -849,7 +1078,7 @@ export function Leitor() {
                   key={item.codigo}
                   type="button"
                   className={item.codigo === idioma ? 'segmentado__item segmentado__item--on' : 'segmentado__item'}
-                  onClick={() => setIdioma(item.codigo)}
+                  onClick={() => escolherOrigem(item.codigo)}
                   aria-pressed={item.codigo === idioma}
                 >
                   <strong>{item.sigla}</strong>
@@ -882,7 +1111,7 @@ export function Leitor() {
                   disabled={baixando !== null}
                 >
                   {baixando !== null
-                    ? `Baixando ${Math.round(baixando * 100)}%`
+                    ? 'Preparando…'
                     : baixada
                       ? 'Natural'
                       : `Natural · ${naturalDoIdioma?.tamanhoMB} MB`}
@@ -890,9 +1119,19 @@ export function Leitor() {
               </div>
             ) : null}
 
+            {/* Andamento de verdade: quantos MB já vieram, de quantos. */}
             {baixando !== null ? (
-              <div className="transporte__trilha" aria-hidden="true">
-                <div className="transporte__preenchimento" style={{ width: `${baixando * 100}%` }} />
+              <div className="download">
+                <span className="download__texto">{recadoDoDownload(baixando)}</span>
+                <div className="transporte__trilha" aria-hidden="true">
+                  <div
+                    className="transporte__preenchimento"
+                    style={{ width: `${baixando.total > 0 ? (baixando.baixados / baixando.total) * 100 : 4}%` }}
+                  />
+                </div>
+                <button type="button" className="btn btn--sm btn--ghost" onClick={cancelarDownload}>
+                  Cancelar
+                </button>
               </div>
             ) : null}
 
@@ -966,6 +1205,62 @@ export function Leitor() {
             </div>
           </div>
 
+          <div className="ajuste ajuste--drive">
+            <span className="field__label">Google Drive</span>
+            {!drive.configurado() ? (
+              <p className="field__hint">
+                O Google Drive ainda não foi ligado nesta publicação. Quem cuida do projeto precisa cadastrar o ID
+                do cliente OAuth uma única vez — o passo a passo está no LEIA-ME. Enquanto isso, use o botão
+                <strong> Arquivo</strong>.
+              </p>
+            ) : contaDrive ? (
+              <>
+                <p className="drive__conta">
+                  Conectado como <strong>{contaDrive.conta ?? 'sua conta do Google'}</strong>
+                </p>
+                <div className="drive__acoes">
+                  <button
+                    type="button"
+                    className="btn btn--sm btn--accent"
+                    onClick={() => void escolherNoDrive()}
+                    disabled={abrindo || conectandoDrive}
+                  >
+                    <IconNuvem size={13} /> Abrir arquivo
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--sm"
+                    onClick={() => void trocarContaDoDrive()}
+                    disabled={conectandoDrive}
+                  >
+                    Trocar de conta
+                  </button>
+                  <button type="button" className="btn btn--sm btn--ghost" onClick={() => void desconectarDoDrive()}>
+                    Desconectar
+                  </button>
+                </div>
+                <p className="field__hint">
+                  O programa só enxerga os arquivos que você escolher na janela do Google.
+                </p>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn btn--sm btn--accent"
+                  onClick={() => void abrirDoDrive()}
+                  disabled={conectandoDrive}
+                >
+                  {conectandoDrive ? <IconSpinner size={13} className="spin" /> : <IconNuvem size={13} />} Conectar ao
+                  Google Drive
+                </button>
+                <p className="field__hint">
+                  Entre pela tela do próprio Google. A permissão pedida vale só para os arquivos que você escolher.
+                </p>
+              </>
+            )}
+          </div>
+
           <p className="ajuste__dica">
             Durante a leitura, clique em qualquer palavra do texto para continuar a partir dali — o trecho falado fica
             destacado. Você também pode arrastar um PDF, um Word (.docx) ou um .txt para cima do texto.
@@ -973,73 +1268,52 @@ export function Leitor() {
         </aside>
       </main>
 
-      {pedindoDrive ? (
-        <div className="janela" role="dialog" aria-label="Configurar o Google Drive">
-          <div className="janela__cartao">
-            <h2 className="janela__titulo">Ligar o Google Drive</h2>
-            <p className="janela__texto">
-              O Drive precisa de dois códigos públicos da sua conta Google — eles ficam guardados só neste navegador,
-              nunca no programa. O passo a passo está no arquivo <strong>LEIA-ME</strong> do projeto, em "Google Drive".
-            </p>
-            <form
-              className="janela__form"
-              onSubmit={(evento) => {
-                evento.preventDefault()
-                const dados = new FormData(evento.currentTarget)
-                drive.guardarCredenciais(String(dados.get('cliente') ?? ''), String(dados.get('api') ?? ''))
-                setPedindoDrive(false)
-                void abrirDoDrive()
-              }}
-            >
-              <label className="field__label" htmlFor="drive-cliente">
-                ID do cliente OAuth
-              </label>
-              <input
-                id="drive-cliente"
-                name="cliente"
-                className="text-input"
-                placeholder="000000000000-xxxxxxxx.apps.googleusercontent.com"
-                defaultValue={drive.lerCredenciais()?.cliente ?? ''}
-                required
-              />
-              <label className="field__label" htmlFor="drive-api">
-                Chave de API (navegador)
-              </label>
-              <input
-                id="drive-api"
-                name="api"
-                className="text-input"
-                placeholder="AIza…"
-                defaultValue={drive.lerCredenciais()?.api ?? ''}
-                required
-              />
-              <div className="janela__acoes">
-                <button type="button" className="btn" onClick={() => setPedindoDrive(false)}>
-                  Cancelar
-                </button>
-                <button type="submit" className="btn btn--primary">
-                  Salvar e abrir
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
-
       {aviso ? (
         <div className="leitor__aviso" role="status">
           <IconAlert size={15} />
           <span>{aviso}</span>
+
+          {/* Falhou no meio da leitura: continua do mesmo ponto, com a mesma
+              velocidade e o mesmo idioma — nada volta ao começo. */}
           {usandoNatural && leitura.erro ? (
             <span className="leitor__aviso-acoes">
               <button type="button" className="btn btn--sm" onClick={continuar}>
                 Tentar de novo
               </button>
               <button type="button" className="btn btn--sm btn--accent" onClick={usarVozDoAparelho}>
-                Usar a voz do aparelho
+                Usar a voz do aparelho daqui em diante
               </button>
             </span>
           ) : null}
+
+          {/* Falhou ao baixar: a escolha da voz continua onde estava. */}
+          {falhaDaVoz && !leitura.erro ? (
+            <span className="leitor__aviso-acoes">
+              <button type="button" className="btn btn--sm" onClick={() => void baixarVoz()}>
+                Tentar de novo
+              </button>
+              <button
+                type="button"
+                className="btn btn--sm btn--accent"
+                onClick={() => {
+                  setFalhaDaVoz(null)
+                  usarVozDoAparelho()
+                }}
+              >
+                Usar a voz do aparelho
+              </button>
+              {falhaDaVoz.detalhe ? (
+                <button type="button" className="btn btn--sm btn--ghost" onClick={() => setVerDetalhe((v) => !v)}>
+                  {verDetalhe ? 'Ocultar detalhes' : 'Ver detalhes'}
+                </button>
+              ) : null}
+              <button type="button" className="btn btn--sm btn--ghost" onClick={() => setFalhaDaVoz(null)}>
+                Fechar
+              </button>
+            </span>
+          ) : null}
+
+          {falhaDaVoz && verDetalhe ? <code className="leitor__detalhe">{falhaDaVoz.detalhe}</code> : null}
         </div>
       ) : null}
 

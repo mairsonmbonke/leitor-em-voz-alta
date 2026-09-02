@@ -48,6 +48,54 @@ valer.
 Funciona no computador e no celular. No celular, vale usar "Adicionar à tela de
 início" pelo menu do navegador: a página abre como um aplicativo.
 
+## A voz natural (a que não depende do aparelho)
+
+No iPhone, as vozes boas da Siri não são entregues à web: só sobram as
+mecânicas. Para não ficar refém disso, a página oferece uma **voz natural que
+roda no próprio aparelho** — um modelo do [Piper](https://github.com/rhasspy/piper),
+de código aberto, baixado uma vez (~60 MB por idioma) e guardado no navegador.
+Depois disso ela funciona até sem internet. Não custa nada, não pede cadastro e
+não usa chave nenhuma.
+
+O que a página baixa, e de onde:
+
+| Peça | Tamanho | De onde vem |
+| --- | --- | --- |
+| Modelo da voz (`.onnx`) e seus ajustes (`.onnx.json`) | ~60 MB | `huggingface.co/rhasspy/piper-voices`, com `diffusionstudio/piper-voices` como reserva |
+| Motor de inferência (WebAssembly do ONNX) | ~14 MB | a própria página |
+| Conversor de letras em sons e dados do espeak-ng | ~18 MB | a própria página (`motor/`) |
+
+**Só o modelo vem de fora.** Durante o download a tela mostra quantos megabytes
+já vieram de quantos, e dá para cancelar.
+
+Quando alguma coisa dá errado, a mensagem diz **o que** deu errado — o endereço
+que respondeu 404, o servidor que recusou, a rede que bloqueou, a falta de
+espaço, o download interrompido no meio, a página de erro que veio no lugar do
+modelo — e o botão *Ver detalhes* mostra o pedido que falhou. Em qualquer falha:
+
+- dá para **tentar de novo**, e a segunda tentativa começa limpa;
+- o **texto continua na tela** e a leitura **fica no mesmo ponto**;
+- a **velocidade e o idioma** escolhidos ficam como estavam;
+- a voz escolhida **não muda sozinha** — quem troca é você, no botão
+  *Usar a voz do aparelho*, que retoma exatamente de onde a outra parou.
+
+Um modelo que tenha sido guardado pela metade (ou corrompido) é descartado
+sozinho na próxima visita, para não falhar de novo pelo mesmo motivo.
+
+### iPhone e Safari
+
+A voz natural funciona no Safari e no iPhone recentes: precisa de WebAssembly e
+do armazenamento privado do navegador (OPFS), presentes desde o iOS 17. Onde a
+gravação moderna não existe, a página grava por outro caminho, o que o Safari
+oferece (`createSyncAccessHandle`, dentro de um *worker*). Onde faltar o
+essencial, o botão da voz natural nem aparece e as vozes do aparelho seguem
+funcionando.
+
+Duas ressalvas honestas, que dependem do aparelho de cada um: são ~90 MB para
+guardar (a página confere o espaço antes de começar) e o modelo roda na memória
+do navegador — em iPhones antigos ele pode não caber, e nesse caso a mensagem
+diz isso, sem travar a leitura.
+
 ## Acompanhar a leitura sem perder o lugar
 
 A área do texto rola sozinha atrás do trecho falado. Quando alguém rola com o
@@ -77,11 +125,24 @@ revisar, corrigir, traduzir e ouvir.
 
 ## Traduzir
 
-O botão **Traduzir** verte o texto inteiro para outro dos quatro idiomas,
-parágrafo a parágrafo — é o que mantém original e tradução alinhados.
+O botão **Traduzir** abre um painel com dois campos e um botão:
 
-- O idioma do texto é **descoberto sozinho** e pode ser corrigido nos botões.
+- **Idioma original** — *Detectar automaticamente* (mostrando qual idioma foi
+  identificado) ou português, inglês, espanhol e alemão, para corrigir à mão.
+- **Traduzir para** — os mesmos quatro idiomas, menos o do original.
+- **Traduzir** — verte o texto inteiro, parágrafo a parágrafo, que é o que
+  mantém original e tradução alinhados.
+
+No computador o painel já vem aberto; no celular ele abre no botão *Traduzir*,
+para não roubar a altura que o texto precisa.
+
+- O idioma do texto é **descoberto sozinho** a cada mudança — digitado, colado,
+  aberto de um arquivo ou reconhecido numa foto — e pode ser corrigido tanto no
+  painel quanto nos botões PT/EN/ES/DE.
 - O idioma de destino nunca pode ser igual ao de origem.
+- **Ouvir original** e **Ouvir tradução** escolhem qual das duas versões é lida.
+- A tradução pode ser **corrigida à mão** no botão *Editar*, sem tocar no
+  original.
 - No computador, original e tradução aparecem **lado a lado**; no celular, em
   duas **abas**.
 - A versão escolhida é a que se lê, **com a voz do idioma dela** — nunca as duas
@@ -97,33 +158,71 @@ De onde vem a tradução, nesta ordem:
 | Tradutor embutido do navegador (`Translator`) | grátis | sem limite | Chrome e Edge recentes, no computador |
 | [MyMemory](https://mymemory.translated.net/) | grátis, sem cadastro | alguns milhares de caracteres por dia, por conexão | qualquer navegador (é o caso do iPhone) |
 
-Nenhuma das duas pede chave de acesso. Quando o limite diário do MyMemory
-acaba, a página avisa e sugere o computador com Chrome ou Edge.
+Nenhuma das duas pede chave de acesso, cadastro ou cartão — não há nada a
+contratar. Quando o limite diário do MyMemory acaba, a página avisa e sugere o
+computador com Chrome ou Edge.
+
+**No iPhone e no Safari**, o tradutor embutido do navegador não existe (é uma
+funcionalidade do Chrome e do Edge, e só no computador). Lá a tradução passa
+sempre pelo MyMemory: funciona sem configurar nada, mas tem o limite diário
+gratuito de alguns milhares de caracteres por conexão. Para traduzir um livro
+inteiro, o computador com Chrome ou Edge é o caminho — ali não há limite, e a
+tradução acontece dentro do próprio aparelho.
 
 ## Google Drive
 
-O botão **Drive** abre um arquivo do Google Drive — PDF, Word, TXT, Documentos
-Google (exportados como texto) e imagens JPG/PNG. O acesso é o mais estreito que
-o Google oferece: o escopo `drive.file` dá permissão **só aos arquivos que você
-escolher** na janela do Google.
+O botão **Conectar ao Drive** abre a tela de login do próprio Google. Depois de
+autorizar, a janela oficial do Google mostra os arquivos e você escolhe um —
+PDF, Word, TXT, Documentos Google (exportados como texto) e imagens JPG/PNG. O
+arquivo escolhido entra no leitor pelo mesmo caminho de um arquivo do
+computador.
 
-Para ligar, é preciso cadastrar dois códigos **públicos** da sua conta Google.
-Eles ficam guardados no seu navegador, nunca no código da página:
+Quem usa não cadastra nada. Na barra de ajustes ficam a **conta conectada**,
+**Abrir arquivo**, **Trocar de conta** e **Desconectar** (que cancela a
+autorização no Google, não só aqui). A conexão continua valendo entre visitas
+enquanto a autorização durar.
+
+O acesso é o mais estreito que o Google oferece: `drive.file` dá permissão **só
+aos arquivos que você escolher** na janela do Google — o programa não enxerga o
+resto do Drive —, mais `userinfo.email`, que serve apenas para mostrar qual
+conta está conectada.
+
+### Configuração — uma vez só, por quem publica o site
+
+Nada disto é senha. Neste fluxo (OAuth de navegador, sem servidor) **não existe
+chave secreta**: o *ID do cliente* é público por natureza — aparece na barra de
+endereços em qualquer login com Google — e sozinho não dá acesso a nada. Quem
+protege a conta é a lista de origens autorizadas: o ID só funciona no endereço
+cadastrado. Mesmo assim ele não fica escrito no código: entra no build, a partir
+de uma variável.
 
 1. Acesse o [Google Cloud Console](https://console.cloud.google.com/) e crie um
    projeto (ou use um existente).
 2. Em **APIs e serviços → Biblioteca**, ative a **Google Drive API** e a
    **Google Picker API**.
 3. Em **APIs e serviços → Tela de permissão OAuth**, escolha *Externo*, preencha
-   o nome do aplicativo e o seu e-mail, e adicione o seu e-mail em
-   **Usuários de teste**.
+   o nome do aplicativo e o seu e-mail. Em **Escopos**, acrescente
+   `.../auth/drive.file` e `.../auth/userinfo.email`.
+   - Enquanto a tela estiver em *Teste*, só os e-mails listados em
+     **Usuários de teste** conseguem entrar — acrescente o seu ali. Para
+     liberar a qualquer pessoa, publique a tela de permissão (o Google pede uma
+     verificação; com o escopo `drive.file` ela costuma ser simples).
 4. Em **Credenciais → Criar credenciais → ID do cliente OAuth**, tipo
    *Aplicativo da Web*. Em **Origens JavaScript autorizadas**, acrescente
-   `https://mairsonmbonke.github.io`. Copie o **ID do cliente**.
-5. Ainda em **Credenciais → Criar credenciais → Chave de API**. Restrinja a
-   chave por *Referenciadores HTTP* (`https://mairsonmbonke.github.io/*`) e às
-   APIs do Drive e do Picker. Copie a **chave**.
-6. Na página, toque em **Drive** e cole os dois valores.
+   `https://mairsonmbonke.github.io` (e `http://localhost:5173` para testar na
+   sua máquina). **Não é preciso URI de redirecionamento.** Copie o
+   **ID do cliente**.
+5. No GitHub, em **Settings → Secrets and variables → Actions → Variables →
+   New repository variable**, crie `VITE_GOOGLE_CLIENT_ID` com esse valor.
+6. Republique pela aba **Actions → Publicar no GitHub Pages → Run workflow**.
+
+Pronto — o botão passa a funcionar para qualquer pessoa que abrir a página.
+Para rodar na sua máquina, copie `.env.example` para `.env` e ponha o mesmo
+valor ali.
+
+Enquanto a variável não existir, o site publica normalmente e a página explica,
+em vez de falhar em silêncio, que o Drive ainda não foi ligado — o botão
+**Arquivo** continua abrindo qualquer documento do aparelho.
 
 ## Arquivos aceitos
 
@@ -173,6 +272,9 @@ npm test          # testes das funções puras
 
 ```
 index.html         a página
+.env.example       a configuração do Google Drive (feita uma vez, pelo dono)
+scripts/
+  preparar-motor.mjs  copia para public/motor/ as peças da voz natural
 src/
   main.tsx         ponto de entrada
   Leitor.tsx       a tela inteira: texto, ajustes e controles
@@ -197,10 +299,15 @@ test/              testes das funções puras (node:test, sem dependências)
 
 ## Publicação
 
-O site é estático — não tem servidor, banco nem chave de API. A cada push na
+O site é estático — não tem servidor, banco nem chave secreta. A cada push na
 `main`, o workflow `.github/workflows/deploy.yml` roda o build e publica no
 GitHub Pages; também dá para republicar pela aba **Actions → Publicar no GitHub
 Pages → Run workflow**.
+
+O build lê as *variables* `VITE_GOOGLE_CLIENT_ID` (e, se quiser,
+`VITE_GOOGLE_API_KEY` e `VITE_GOOGLE_APP_ID`) do repositório — é só isso que o
+Google Drive precisa, e é a única configuração do projeto. Sem elas o site
+publica igual, com o Drive desligado e explicado na tela.
 
 **Antes da primeira publicação**, é preciso ativar o Pages uma vez, à mão, em
 **Settings → Pages → Source: GitHub Actions**. Enquanto isso não for feito, o
@@ -228,6 +335,7 @@ Chrome, Edge, Safari (incluindo iPhone e iPad) e Chrome do Android. As vozes do
 aparelho vêm do sistema operacional, então a lista muda de um para outro — se
 não houver nenhuma voz do idioma escolhido, a página avisa. A voz natural pede
 WebAssembly e o sistema de arquivos privado do navegador (OPFS), presentes em
-todos esses navegadores em versão recente; onde faltar, o botão nem aparece. No Android o `pause()`
+todos esses navegadores em versão recente (no iPhone, iOS 17 em diante); onde
+faltar, o botão nem aparece. No Android o `pause()`
 do navegador costuma ser ignorado; nesse caso a fala é cortada e o **Continuar**
 recomeça exatamente da palavra em que parou.

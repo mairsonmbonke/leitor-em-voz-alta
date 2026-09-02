@@ -4,3 +4,6 @@ dist
 .DS_Store
 .vite
 tsconfig.tsbuildinfo
+public/motor
+.env
+.env.local

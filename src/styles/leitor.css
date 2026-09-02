@@ -249,12 +249,43 @@ body {
 /* ── Tradução: abas, progresso e comparação ─────────────────────────── */
 .traducao-barra {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
   flex: none;
   padding: 9px 14px;
   border-bottom: 1px solid var(--line-soft);
   background: rgba(124, 92, 255, 0.05);
+}
+
+.traducao-barra__linha {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.traducao-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.traducao-campo .text-input {
+  height: 34px;
+  width: auto;
+  min-width: 176px;
+  font-size: 12.5px;
+}
+
+.traducao-barra__botao {
+  height: 34px;
+  padding-inline: 16px;
+}
+
+.traducao-barra__nota {
+  font-size: 11.5px;
+  color: var(--text-faint);
 }
 
 .abas {
@@ -286,18 +317,51 @@ body {
   color: #fff;
 }
 
-.traducao-barra__novo {
+/* Andamento do download da voz natural, com os megabytes à vista. */
+.download {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-input);
 }
 
-.traducao-barra__novo .text-input {
-  height: 32px;
-  width: auto;
-  min-width: 130px;
+.download__texto {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.download .btn {
+  align-self: flex-start;
+}
+
+/* A conta do Google conectada e o que dá para fazer com ela. */
+.drive__conta {
   font-size: 12.5px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.drive__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* A explicação técnica de uma falha, para quem quiser ver. */
+.leitor__detalhe {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
 }
 
 .tarefa {
@@ -620,6 +684,7 @@ body {
   flex: none;
   display: flex;
   align-items: flex-start;
+  flex-wrap: wrap;
   gap: 9px;
   width: min(1120px, 100%);
   margin: 0 auto 10px;
@@ -639,9 +704,9 @@ body {
 
 .leitor__aviso-acoes {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-left: auto;
-  flex: none;
 }
 
 /* ── Barra de controles ─────────────────────────────────────────────── */
@@ -826,13 +891,25 @@ body {
     font-size: 11.5px;
   }
 
-  .traducao-barra__novo {
-    width: 100%;
-    margin-left: 0;
+  .traducao-campo {
+    flex: 1 1 110px;
   }
 
-  .traducao-barra__novo .text-input {
-    flex: 1;
+  .traducao-campo .text-input {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .traducao-barra__botao {
+    flex: none;
+    padding-inline: 12px;
+  }
+
+  /* Numa tela estreita, o idioma descoberto já aparece dentro da própria
+     lista ("Detectar automaticamente · Português"): a nota seria repetição
+     ocupando a altura que o texto precisa. */
+  .traducao-barra__nota {
+    display: none;
   }
 
   .leitor__topo {

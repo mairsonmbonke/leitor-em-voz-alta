@@ -37,8 +37,16 @@ jobs:
       - name: Conferir a configuração do Pages
         uses: actions/configure-pages@v6
 
+      # O ID do cliente OAuth do Google entra aqui, no build, vindo das
+      # "Variables" do repositório — nunca escrito no código. Sem ele o site
+      # publica normalmente; só o botão do Google Drive fica desligado, com a
+      # explicação na tela. Ver o LEIA-ME, em "Google Drive".
       - name: Build de produção
         run: npm run build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_API_KEY: ${{ vars.VITE_GOOGLE_API_KEY }}
+          VITE_GOOGLE_APP_ID: ${{ vars.VITE_GOOGLE_APP_ID }}
 
       - uses: actions/upload-pages-artifact@v5
         with:

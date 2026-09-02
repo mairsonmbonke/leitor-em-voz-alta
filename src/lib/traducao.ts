@@ -40,10 +40,22 @@ const MAXIMO_POR_PEDIDO = 450
  * português, inglês, espanhol e alemão com boa margem, sem baixar nada.
  */
 const MARCAS: Record<string, string[]> = {
-  'pt-BR': ['que', 'não', 'uma', 'com', 'para', 'como', 'mais', 'quando', 'você', 'está', 'são', 'pelo', 'muito', 'já'],
-  'en-US': ['the', 'and', 'that', 'with', 'for', 'this', 'from', 'have', 'they', 'which', 'was', 'you', 'about'],
-  'es-ES': ['que', 'los', 'una', 'con', 'para', 'como', 'pero', 'este', 'sus', 'muy', 'cuando', 'porque', 'está'],
-  'de-DE': ['der', 'die', 'das', 'und', 'nicht', 'ist', 'mit', 'für', 'auch', 'sich', 'auf', 'ein', 'eine', 'werden'],
+  'pt-BR': [
+    'que', 'não', 'uma', 'com', 'para', 'como', 'mais', 'quando', 'você', 'está', 'são', 'pelo', 'muito', 'já',
+    'do', 'da', 'dos', 'das', 'ao', 'pela', 'seu', 'sua', 'ele', 'ela', 'isso', 'também', 'foi', 'ser', 'mesmo',
+  ],
+  'en-US': [
+    'the', 'and', 'that', 'with', 'for', 'this', 'from', 'have', 'they', 'which', 'was', 'you', 'about',
+    'of', 'to', 'is', 'are', 'it', 'not', 'but', 'their', 'would', 'there',
+  ],
+  'es-ES': [
+    'que', 'los', 'una', 'con', 'para', 'como', 'pero', 'este', 'sus', 'muy', 'cuando', 'porque', 'está',
+    'del', 'las', 'sin', 'son', 'más', 'ellos', 'ella', 'fue', 'nada', 'aquí',
+  ],
+  'de-DE': [
+    'der', 'die', 'das', 'und', 'nicht', 'ist', 'mit', 'für', 'auch', 'sich', 'auf', 'ein', 'eine', 'werden',
+    'den', 'dem', 'von', 'zu', 'im', 'aber', 'oder', 'sind', 'wird', 'durch', 'einigen',
+  ],
 }
 
 /** Letras que praticamente só aparecem num dos idiomas. */
