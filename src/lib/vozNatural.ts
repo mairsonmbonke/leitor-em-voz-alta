@@ -121,7 +121,32 @@ export class ErroDeVoz extends Error {
     this.name = 'ErroDeVoz'
     this.detalhe = detalhe
     this.temJeito = temJeito
+    if (detalhe) anotarFalha(mensagem, detalhe)
   }
+}
+
+/**
+ * A última explicação técnica, guardada para a tela poder mostrá-la.
+ *
+ * Sem isto, uma falha na hora de falar (e não na de baixar) chegaria à pessoa
+ * como uma frase sozinha, sem o endereço nem o erro do navegador por trás —
+ * justamente o que faz falta para descobrir o que aconteceu.
+ */
+let ultimoDetalhe: string | null = null
+
+function anotarFalha(mensagem: string, detalhe: string): void {
+  ultimoDetalhe = detalhe
+  if (typeof console !== 'undefined') console.warn('[voz natural]', mensagem, '—', detalhe)
+}
+
+/** O detalhe técnico da última falha, ou `null` se ainda não houve nenhuma. */
+export function ultimaFalha(): string | null {
+  return ultimoDetalhe
+}
+
+/** Esquece a falha anterior (ao começar uma tentativa nova). */
+export function esquecerFalha(): void {
+  ultimoDetalhe = null
 }
 
 /**

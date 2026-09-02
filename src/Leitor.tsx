@@ -15,8 +15,10 @@ import { useLeituraNatural } from './useLeituraNatural'
 import {
   ErroDeVoz,
   baixar,
+  esquecerFalha,
   jaBaixadas,
   suportaVozNatural,
+  ultimaFalha,
   vozNaturalDoIdioma,
   type Andamento,
 } from './lib/vozNatural'
@@ -246,6 +248,7 @@ export function Leitor() {
     setBaixando({ etapa: 'ajustes', baixados: 0, total: 0 })
     setFalhaDaVoz(null)
     setVerDetalhe(false)
+    esquecerFalha()
     setRecado(null)
     try {
       await baixar(naturalDoIdioma.id, (andamento) => setBaixando(andamento), controle.signal)
@@ -1283,6 +1286,11 @@ export function Leitor() {
               <button type="button" className="btn btn--sm btn--accent" onClick={usarVozDoAparelho}>
                 Usar a voz do aparelho daqui em diante
               </button>
+              {ultimaFalha() ? (
+                <button type="button" className="btn btn--sm btn--ghost" onClick={() => setVerDetalhe((v) => !v)}>
+                  {verDetalhe ? 'Ocultar detalhes' : 'Ver detalhes'}
+                </button>
+              ) : null}
             </span>
           ) : null}
 
@@ -1313,7 +1321,9 @@ export function Leitor() {
             </span>
           ) : null}
 
-          {falhaDaVoz && verDetalhe ? <code className="leitor__detalhe">{falhaDaVoz.detalhe}</code> : null}
+          {verDetalhe && (falhaDaVoz?.detalhe || ultimaFalha()) ? (
+            <code className="leitor__detalhe">{falhaDaVoz?.detalhe || ultimaFalha()}</code>
+          ) : null}
         </div>
       ) : null}
 
