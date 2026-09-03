@@ -2,6 +2,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -78,6 +79,19 @@ const ESPERA_AJUSTE = 260
 const FOLGA_ROLAGEM = 48
 /** Intervalo mínimo entre duas rolagens automáticas. */
 const ESPERA_ROLAGEM = 400
+/**
+ * Por quanto tempo, depois de a página rolar sozinha, as rolagens que chegam
+ * ainda são consideradas nossas.
+ *
+ * Arrastar a barra de rolagem, ou usar as teclas, não dispara `wheel` nem
+ * `touchmove` — só `scroll`, o mesmo evento que a rolagem automática dispara.
+ * Esta janela separa uma da outra.
+ */
+const MARGEM_DA_ROLAGEM = 900
+
+type Versao = 'original' | 'traducao'
+
+const aOutra = (qual: Versao): Versao => (qual === 'original' ? 'traducao' : 'original')
 
 /** Bytes em megabytes, do jeito que se lê. */
 function emMB(bytes: number): string {
@@ -132,7 +146,7 @@ export function Leitor() {
   /** Tradução pronta do texto atual, quando existe. */
   const [traducao, setTraducao] = useState<{ de: string; para: string; texto: string } | null>(null)
   /** Qual das duas versões está sendo lida e mostrada. */
-  const [versao, setVersao] = useState<'original' | 'traducao'>('original')
+  const [versao, setVersao] = useState<Versao>('original')
   const [destino, setDestino] = useState('en-US')
   /** Idioma de origem escolhido à mão; `null` significa "descobrir sozinho". */
   const [origemManual, setOrigemManual] = useState<string | null>(null)
@@ -157,8 +171,21 @@ export function Leitor() {
   const [arrastando, setArrastando] = useState(false)
 
   const areaRef = useRef<HTMLDivElement>(null)
+  /** O painel de comparação, com a versão que não está sendo lida. */
+  const comparacaoRef = useRef<HTMLDivElement>(null)
   const campoRef = useRef<HTMLTextAreaElement>(null)
   const seletorRef = useRef<HTMLInputElement>(null)
+
+  /** Até quando uma rolagem que chegar ainda é nossa, e não da pessoa. */
+  const rolagemNossa = useRef(0)
+  /**
+   * Onde cada versão foi deixada. Original e tradução guardam a própria
+   * posição: trocar de aba devolve a tela exatamente ao ponto de antes.
+   */
+  const posicoes = useRef<Record<Versao, number>>({ original: 0, traducao: 0 })
+  const esquecerPosicoes = useCallback(() => {
+    posicoes.current = { original: 0, traducao: 0 }
+  }, [])
 
   // Quando há tradução, ela pode ocupar o lugar do original: a leitura, as
   // vozes e o destaque passam a trabalhar sobre a versão escolhida.
@@ -319,6 +346,16 @@ export function Leitor() {
   /** Quando a área do texto rolou pela última vez. */
   const ultimaRolagem = useRef(0)
 
+  /**
+   * Toda rolagem que a página faz sozinha passa por aqui — é o que permite
+   * distinguir depois a rolagem da pessoa da nossa.
+   */
+  const rolarSozinho = useCallback((area: HTMLElement, deslocamento: number) => {
+    rolagemNossa.current = Date.now() + MARGEM_DA_ROLAGEM
+    const suave = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    area.scrollBy({ top: deslocamento, behavior: suave ? 'smooth' : 'auto' })
+  }, [])
+
   useEffect(() => {
     const area = areaRef.current
     if (!area || !ativo || !acompanhando) return
@@ -340,27 +377,55 @@ export function Leitor() {
     if (agora - ultimaRolagem.current < ESPERA_ROLAGEM) return
     ultimaRolagem.current = agora
 
-    const suave = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
     // Deixa o trecho lido no meio da área visível.
-    const deslocamento = caixa.top - janela.top - (janela.height - caixa.height) / 2
-    area.scrollBy({ top: deslocamento, behavior: suave ? 'smooth' : 'auto' })
-  }, [destaque, indice, ativo, acompanhando])
+    rolarSozinho(area, caixa.top - janela.top - (janela.height - caixa.height) / 2)
+  }, [destaque, indice, ativo, acompanhando, rolarSozinho])
 
   /**
-   * Rolar com o dedo ou com a roda do mouse solta a tela: a leitura segue,
-   * mas a página fica onde a pessoa deixou até ela pedir para voltar.
+   * Rolar à mão solta a tela: a leitura segue, o destaque segue, mas a página
+   * fica onde a pessoa deixou até ela pedir para voltar.
+   *
+   * Vale para os **dois** painéis — o que está sendo lido e o da outra versão,
+   * ao lado — e para qualquer jeito de rolar: dedo, roda do mouse, teclado ou
+   * a barra de rolagem arrastada com o ponteiro. Os dois últimos só disparam
+   * `scroll`, o mesmo evento da rolagem automática; por isso a janela de tempo.
    */
   useEffect(() => {
-    const area = areaRef.current
-    if (!area) return
+    const lida = areaRef.current
+    const outra = comparacaoRef.current
+    const paineis: [HTMLElement, Versao][] = []
+    if (lida) paineis.push([lida, versao])
+    if (outra) paineis.push([outra, aOutra(versao)])
+    if (paineis.length === 0) return
+
     const soltar = () => setAcompanhando(false)
-    area.addEventListener('wheel', soltar, { passive: true })
-    area.addEventListener('touchmove', soltar, { passive: true })
-    return () => {
-      area.removeEventListener('wheel', soltar)
-      area.removeEventListener('touchmove', soltar)
-    }
-  }, [editando])
+    const limpezas = paineis.map(([painel, qual]) => {
+      const aoRolar = () => {
+        // Guarda onde este painel ficou, para a volta à aba.
+        posicoes.current[qual] = painel.scrollTop
+        if (Date.now() > rolagemNossa.current) setAcompanhando(false)
+      }
+      painel.addEventListener('wheel', soltar, { passive: true })
+      painel.addEventListener('touchmove', soltar, { passive: true })
+      painel.addEventListener('scroll', aoRolar, { passive: true })
+      return () => {
+        painel.removeEventListener('wheel', soltar)
+        painel.removeEventListener('touchmove', soltar)
+        painel.removeEventListener('scroll', aoRolar)
+      }
+    })
+    return () => limpezas.forEach((limpar) => limpar())
+  }, [editando, versao, traducao])
+
+  /**
+   * Trocar de versão devolve cada painel ao ponto em que foi deixado — no
+   * celular, onde as duas viram abas, é o que faz cada aba voltar ao lugar.
+   */
+  useLayoutEffect(() => {
+    rolagemNossa.current = Date.now() + MARGEM_DA_ROLAGEM
+    if (areaRef.current) areaRef.current.scrollTop = posicoes.current[versao]
+    if (comparacaoRef.current) comparacaoRef.current.scrollTop = posicoes.current[aOutra(versao)]
+  }, [versao, traducao, editando])
 
   /** Leva a tela de volta ao trecho em leitura e volta a acompanhar. */
   const voltarAoTrecho = useCallback(() => {
@@ -371,12 +436,8 @@ export function Leitor() {
     if (!area || !alvo) return
     const caixa = alvo.getBoundingClientRect()
     const janela = area.getBoundingClientRect()
-    const suave = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    area.scrollBy({
-      top: caixa.top - janela.top - (janela.height - caixa.height) / 2,
-      behavior: suave ? 'smooth' : 'auto',
-    })
-  }, [])
+    rolarSozinho(area, caixa.top - janela.top - (janela.height - caixa.height) / 2)
+  }, [rolarSozinho])
 
   // ── Ações ─────────────────────────────────────────────────────────────
   const comecar = useCallback(() => {
@@ -415,7 +476,8 @@ export function Leitor() {
     setArquivo(null)
     setEditando(true)
     setRecado(null)
-  }, [cancelarTarefa, parar])
+    esquecerPosicoes()
+  }, [cancelarTarefa, esquecerPosicoes, parar])
 
   /**
    * Põe um texto novo em leitura. A tradução antiga não vale mais, e o idioma
@@ -428,12 +490,13 @@ export function Leitor() {
       setVersao('original')
       setArquivo(nomeDoArquivo)
       setEditando(false)
+      esquecerPosicoes()
       const descoberto = detectarIdioma(novo)
       setDetectado(descoberto)
       // Quem escolheu o idioma à mão manda mais que a descoberta automática.
       if (descoberto && origemManual === null) setIdioma(descoberto)
     },
-    [origemManual],
+    [esquecerPosicoes, origemManual],
   )
 
   /** Troca o idioma do original (pelos botões ou pela lista da tradução). */
@@ -560,6 +623,8 @@ export function Leitor() {
           controle.signal,
         )
         // O original nunca é tocado: a tradução vive ao lado dele.
+        // Tradução nova: ela ainda não foi lida por ninguém, começa do topo.
+        posicoes.current.traducao = 0
         setTraducao({ de: idioma, para, texto: traduzidos.join('\n') })
         setVersao('traducao')
         setDestino(para)
@@ -576,11 +641,13 @@ export function Leitor() {
 
   /** Alterna entre original e tradução, encerrando a leitura em curso. */
   const trocarVersao = useCallback(
-    (qual: 'original' | 'traducao') => {
+    (qual: Versao) => {
       if (qual === versao) return
       parar()
       setVersao(qual)
-      setAcompanhando(true)
+      // O acompanhamento não volta sozinho: cada aba retoma no ponto em que
+      // foi deixada, e quem manda a tela seguir a leitura é o botão
+      // "Voltar ao trecho atual" ou um clique num trecho.
     },
     [parar, versao],
   )
@@ -594,7 +661,7 @@ export function Leitor() {
    */
   const pedidoDeLeitura = useRef(false)
   const ouvirVersao = useCallback(
-    (qual: 'original' | 'traducao') => {
+    (qual: Versao) => {
       setEditando(false)
       setAcompanhando(true)
       // Já é esta a versão à vista: basta ler do começo dela.
@@ -699,7 +766,8 @@ export function Leitor() {
     setArquivo(null)
     setEditando(false)
     setRecado(null)
-  }, [idiomaAtual, parar])
+    esquecerPosicoes()
+  }, [esquecerPosicoes, idiomaAtual, parar])
 
   const colar = useCallback(async () => {
     try {
@@ -1041,7 +1109,11 @@ export function Leitor() {
 
               {/* No computador, a outra versão fica ao lado para comparar. */}
               {traducao ? (
-                <div className="comparacao" aria-label={mostrandoTraducao ? 'Texto original' : 'Tradução'}>
+                <div
+                  className="comparacao"
+                  ref={comparacaoRef}
+                  aria-label={mostrandoTraducao ? 'Texto original' : 'Tradução'}
+                >
                   <p className="comparacao__titulo">
                     {mostrandoTraducao
                       ? `Original · ${idiomaPorCodigo(traducao.de).nome}`

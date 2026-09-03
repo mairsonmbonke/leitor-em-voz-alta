@@ -102,11 +102,19 @@ diz isso, sem travar a leitura.
 
 ## Acompanhar a leitura sem perder o lugar
 
-A área do texto rola sozinha atrás do trecho falado. Quando alguém rola com o
-dedo ou com a roda do mouse para procurar outra parte, **o acompanhamento é
-solto na hora**: a leitura continua, o destaque continua, mas a tela fica onde
-foi deixada. Um botão discreto — *Voltar ao trecho atual* — traz a tela de volta
-e retoma o acompanhamento. Clicar numa palavra para ler dali também retoma.
+A área do texto rola sozinha atrás do trecho falado. Quando alguém rola à mão
+para procurar outra parte, **o acompanhamento é solto na hora**: a leitura
+continua, o destaque continua, mas a tela fica onde foi deixada. Vale para
+qualquer jeito de rolar — dedo, roda do mouse, teclado ou a barra de rolagem
+arrastada com o ponteiro.
+
+Com uma tradução aberta, a regra vale para as **duas** áreas: rolar o original
+ao lado também solta a tela, e nenhum dos dois painéis é puxado de volta.
+Original e tradução guardam a **própria** posição — no celular, onde viram
+abas, cada aba volta exatamente ao ponto em que foi deixada.
+
+O acompanhamento só volta de dois jeitos: pelo botão discreto *Voltar ao trecho
+atual*, ou clicando numa palavra para ler dali.
 
 ## Reconhecer texto em fotos e PDFs digitalizados
 
