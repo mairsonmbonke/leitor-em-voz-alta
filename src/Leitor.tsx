@@ -328,12 +328,30 @@ export function Leitor() {
   }, [posicao])
 
   // ── Ajustes no meio da leitura ────────────────────────────────────────
-  const primeiro = useRef(true)
+  /**
+   * Trocar a voz, a velocidade ou o idioma no meio da leitura refaz a fala a
+   * partir da palavra atual. O que **não** pode refazer a fala é a lista de
+   * vozes do navegador chegar de novo.
+   *
+   * E ela chega de novo o tempo todo: o Safari (e o iPhone) devolvem objetos
+   * novos a cada `getVoices()`, mesmo sendo as mesmas vozes, e o `voiceschanged`
+   * do Chrome dispara mais de uma vez. Comparando por identidade, a página
+   * concluía que a voz tinha mudado e recomeçava a frase — era o trecho ouvido
+   * duas vezes, e a pausa que voltava atrás ao continuar.
+   *
+   * Por isso a comparação é pelo **valor** dos ajustes, não pelo objeto.
+   */
+  const ajustesAplicados = useRef({ voz: voz?.voiceURI ?? '', velocidade, idioma: idiomaAtivo })
   useEffect(() => {
-    if (primeiro.current) {
-      primeiro.current = false
-      return
-    }
+    const agora = { voz: voz?.voiceURI ?? '', velocidade, idioma: idiomaAtivo }
+    const antes = ajustesAplicados.current
+    if (agora.voz === antes.voz && agora.velocidade === antes.velocidade && agora.idioma === antes.idioma) return
+
+    // A lista de vozes ainda estava vazia: descobrir a voz não é trocá-la.
+    const soAgoraApareceu = antes.voz === '' && agora.voz !== ''
+    ajustesAplicados.current = agora
+    if (soAgoraApareceu) return
+
     // Na voz natural a velocidade é só a rotação do áudio, que o próprio
     // motor ajusta; refazer a fala seria um solavanco à toa.
     if (usandoNatural) return
