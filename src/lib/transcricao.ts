@@ -233,6 +233,36 @@ let trilha: string[] = []
 /** A listagem do que existe no servidor, buscada quando tudo falha. */
 let listagemDoServidor = ''
 
+/** Os arquivos de modelo que foram realmente buscados nesta tentativa. */
+let arquivosBuscados: string[] = []
+
+/**
+ * Anota quais arquivos `.onnx` a biblioteca pede, enquanto ela carrega.
+ *
+ * O nome do arquivo é a única prova de qual formato foi de fato carregado. Sem
+ * ela, pedir `fp32` e receber um erro que só existe em pesos de 4 bits fica sem
+ * explicação possível — e foi assim que este defeito resistiu a seis rodadas de
+ * conserto. Devolve a função que desfaz a espionagem.
+ */
+function espiarPedidos(): () => void {
+  const original = globalThis.fetch
+  if (typeof original !== 'function') return () => {}
+
+  globalThis.fetch = function (entrada: RequestInfo | URL, opcoes?: RequestInit) {
+    const endereco =
+      typeof entrada === 'string' ? entrada : entrada instanceof URL ? entrada.href : (entrada as Request).url
+    if (/\.onnx(_data)?(\?|$)/i.test(endereco)) {
+      // Só o nome do arquivo interessa; o endereço inteiro é longo e repetido.
+      const nome = endereco.split('/').slice(-2).join('/').split('?')[0]
+      if (!arquivosBuscados.includes(nome)) arquivosBuscados.push(nome)
+    }
+    return original.call(globalThis, entrada, opcoes)
+  }
+  return () => {
+    globalThis.fetch = original
+  }
+}
+
 /** Resume uma falha em duas palavras, para caber na trilha. */
 function porQueNaoServiu(texto: string): string {
   if (/could not locate|404|not found/i.test(texto)) return 'não existe'
@@ -252,6 +282,7 @@ function comoErro(erro: unknown): ErroDeTranscricao {
   const partes = [cru]
   if (versaoDoMotor) partes.push(`[motor ${versaoDoMotor}]`)
   if (trilha.length > 0) partes.push(`[tentativas: ${trilha.join('; ')}]`)
+  if (arquivosBuscados.length > 0) partes.push(`[arquivos buscados: ${arquivosBuscados.join(', ')}]`)
   if (listagemDoServidor) partes.push(`\n\n--- o que existe no servidor ---\n${listagemDoServidor}`)
   const texto = partes.join(' ')
 
@@ -336,6 +367,8 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
   let ultimo: unknown = null
   trilha = []
   listagemDoServidor = ''
+  arquivosBuscados = []
+  const pararDeEspiar = espiarPedidos()
 
   for (let i = 0; i < fila.length; i += 1) {
     const tentativa = fila[i]
@@ -349,6 +382,7 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
       })
       // Guarda a que funcionou: nas próximas visitas ela vem primeiro.
       guardarLista(CHAVE_ESCOLHA, [chaveDa(tentativa)])
+      pararDeEspiar()
       return reconhecedor
     } catch (erro) {
       reconhecedor = null
@@ -382,6 +416,7 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
   // resposta à explicação. São alguns kilobytes, só quando tudo já falhou — e
   // poupa quem está usando de ter de rodar um teste à parte para contar o que
   // aconteceu.
+  pararDeEspiar()
   try {
     listagemDoServidor = await conferirModelos()
   } catch (erro) {
