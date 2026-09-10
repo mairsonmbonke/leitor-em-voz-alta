@@ -31,7 +31,7 @@ test('sem histórico, a fila é a ordem pensada — do mais leve ao último recu
 test('o que já funcionou neste navegador passa à frente', () => {
   guardado.clear()
   const escolhida = chaveDa(TENTATIVAS[2])
-  guardado.set('leitor.transcricao.escolha', JSON.stringify([escolhida]))
+  guardado.set('leitor.transcricao.escolha.2', JSON.stringify([escolhida]))
 
   const fila = tentativasDeHoje()
   assert.equal(chaveDa(fila[0]), escolhida, 'não começou pela que já tinha funcionado')
@@ -41,7 +41,7 @@ test('o que já funcionou neste navegador passa à frente', () => {
 test('o que já foi recusado sai da fila, para não baixar de novo à toa', () => {
   guardado.clear()
   const recusadas = [chaveDa(TENTATIVAS[0]), chaveDa(TENTATIVAS[1])]
-  guardado.set('leitor.transcricao.recusadas', JSON.stringify(recusadas))
+  guardado.set('leitor.transcricao.recusadas.2', JSON.stringify(recusadas))
 
   const fila = tentativasDeHoje().map(chaveDa)
   for (const ruim of recusadas) assert.ok(!fila.includes(ruim), `${ruim} continuou na fila`)
@@ -50,13 +50,13 @@ test('o que já foi recusado sai da fila, para não baixar de novo à toa', () =
 
 test('se tudo foi recusado, a fila volta inteira em vez de ficar vazia', () => {
   guardado.clear()
-  guardado.set('leitor.transcricao.recusadas', JSON.stringify(TENTATIVAS.map(chaveDa)))
+  guardado.set('leitor.transcricao.recusadas.2', JSON.stringify(TENTATIVAS.map(chaveDa)))
   assert.equal(tentativasDeHoje().length, TENTATIVAS.length)
 })
 
 test('armazenamento estragado não derruba a transcrição', () => {
   guardado.clear()
-  guardado.set('leitor.transcricao.recusadas', 'isto não é json')
-  guardado.set('leitor.transcricao.escolha', '{"nem":"isto"}')
+  guardado.set('leitor.transcricao.recusadas.2', 'isto não é json')
+  guardado.set('leitor.transcricao.escolha.2', '{"nem":"isto"}')
   assert.equal(tentativasDeHoje().length, TENTATIVAS.length)
 })

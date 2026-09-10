@@ -76,8 +76,13 @@ export const TENTATIVAS: Tentativa[] = [
 
 export const chaveDa = (t: Tentativa) => `${t.modelo}|${t.tipo}`
 
-const CHAVE_ESCOLHA = 'leitor.transcricao.escolha'
-const CHAVE_RECUSADAS = 'leitor.transcricao.recusadas'
+/**
+ * O número no fim das chaves é a versão da lista de tentativas. Ao mudá-la, o
+ * histórico antigo deixa de valer sozinho — combinações riscadas por uma versão
+ * do código não devem calar tentativas de outra.
+ */
+const CHAVE_ESCOLHA = 'leitor.transcricao.escolha.2'
+const CHAVE_RECUSADAS = 'leitor.transcricao.recusadas.2'
 
 function lerLista(chave: string): string[] {
   try {
@@ -212,13 +217,35 @@ export async function diagnosticoDoMotor(): Promise<{ versao: string | null; cam
 /** A versão do motor, guardada assim que a biblioteca carrega. */
 let versaoDoMotor: string | null = null
 
+/**
+ * O que já foi tentado nesta busca, e por que cada uma não serviu.
+ *
+ * Sem isto, todas as tentativas produzem a mesma mensagem na tela e não há como
+ * saber qual delas falhou — foi exatamente o que fez esta função ser
+ * diagnosticada às cegas por várias rodadas.
+ */
+let trilha: string[] = []
+
+/** Resume uma falha em duas palavras, para caber na trilha. */
+function porQueNaoServiu(texto: string): string {
+  if (/could not locate|404|not found/i.test(texto)) return 'não existe'
+  if (/create a session|Missing required scale|MatMulNBits|INVALID_GRAPH/i.test(texto)) return 'não abre'
+  if (/out of memory|allocat|RangeError/i.test(texto)) return 'sem memória'
+  if (/unauthorized|forbidden|401|403/i.test(texto)) return 'recusado'
+  if (/fetch|network/i.test(texto)) return 'sem resposta'
+  return texto.replace(/\s+/g, ' ').slice(0, 40)
+}
+
 /** Traduz a falha da biblioteca numa frase que ajuda quem está lendo. */
 function comoErro(erro: unknown): ErroDeTranscricao {
   if (erro instanceof ErroDeTranscricao) return erro
   const cru = erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro)
   // A versão do motor entra em toda explicação técnica: foi ela a causa do
   // problema mais difícil desta função.
-  const texto = versaoDoMotor ? `${cru} [motor ${versaoDoMotor}]` : cru
+  const partes = [cru]
+  if (versaoDoMotor) partes.push(`[motor ${versaoDoMotor}]`)
+  if (trilha.length > 0) partes.push(`[tentativas: ${trilha.join('; ')}]`)
+  const texto = partes.join(' ')
 
   if (/abort|cancel/i.test(texto)) return new ErroDeTranscricao('Transcrição cancelada.', texto)
   if (/out of memory|allocat|RangeError|OOM/i.test(texto)) {
@@ -299,6 +326,7 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
 
   const fila = tentativasDeHoje()
   let ultimo: unknown = null
+  trilha = []
 
   for (let i = 0; i < fila.length; i += 1) {
     const tentativa = fila[i]
@@ -320,7 +348,12 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
       // Cancelar é uma decisão da pessoa: não se insiste contra ela.
       if (/abort|cancel/i.test(texto)) break
 
-      console.warn('[transcrição]', chaveDa(tentativa), 'não serviu —', texto)
+      const motivo = porQueNaoServiu(texto)
+      trilha.push(`${tentativa.tipo} em ${tentativa.modelo.split('/')[0]}: ${motivo}`)
+      console.warn('[transcrição]', chaveDa(tentativa), '—', motivo, '—', texto)
+
+      // Um formato que não existe naquele acervo não precisa ser tentado de
+      // novo; um que não abriu, também não. Os dois são riscados.
       guardarLista(CHAVE_RECUSADAS, [...new Set([...lerLista(CHAVE_RECUSADAS), chaveDa(tentativa)])])
 
       const proxima = fila[i + 1]
