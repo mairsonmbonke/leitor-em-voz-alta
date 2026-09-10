@@ -236,6 +236,40 @@ let listagemDoServidor = ''
 /** Os arquivos de modelo que foram realmente buscados nesta tentativa. */
 let arquivosBuscados: string[] = []
 
+/** O que a própria biblioteca avisou enquanto escolhia os arquivos. */
+let recadosDaBiblioteca: string[] = []
+
+/**
+ * Escuta os avisos da biblioteca.
+ *
+ * Ela anuncia, com todas as letras, quando não consegue aplicar o formato
+ * pedido a um arquivo: *"dtype not specified for X. Using the default dtype
+ * (q8)"*. Esse é exatamente o aviso que explicaria pedir `fp32` e receber um
+ * erro que só existe em pesos de 4 bits — e ele já estava sendo escrito no
+ * console todo esse tempo, sem ninguém o recolher.
+ */
+function ouvirRecados(): () => void {
+  const originais = { info: console.info, warn: console.warn, log: console.log }
+
+  const recolher = (nivel: keyof typeof originais) =>
+    function (...args: unknown[]) {
+      const texto = args.map((a) => (typeof a === 'string' ? a : '')).join(' ')
+      if (/dtype|quantiz|falling back|default/i.test(texto) && recadosDaBiblioteca.length < 12) {
+        recadosDaBiblioteca.push(texto.replace(/\s+/g, ' ').slice(0, 160))
+      }
+      originais[nivel].apply(console, args)
+    }
+
+  console.info = recolher('info')
+  console.warn = recolher('warn')
+  console.log = recolher('log')
+  return () => {
+    console.info = originais.info
+    console.warn = originais.warn
+    console.log = originais.log
+  }
+}
+
 /**
  * Anota quais arquivos `.onnx` a biblioteca pede, enquanto ela carrega.
  *
@@ -283,6 +317,7 @@ function comoErro(erro: unknown): ErroDeTranscricao {
   if (versaoDoMotor) partes.push(`[motor ${versaoDoMotor}]`)
   if (trilha.length > 0) partes.push(`[tentativas: ${trilha.join('; ')}]`)
   if (arquivosBuscados.length > 0) partes.push(`[arquivos buscados: ${arquivosBuscados.join(', ')}]`)
+  if (recadosDaBiblioteca.length > 0) partes.push(`[avisos da biblioteca: ${recadosDaBiblioteca.join(' | ')}]`)
   if (listagemDoServidor) partes.push(`\n\n--- o que existe no servidor ---\n${listagemDoServidor}`)
   const texto = partes.join(' ')
 
@@ -339,6 +374,15 @@ function comoErro(erro: unknown): ErroDeTranscricao {
 /** Prepara (ou reaproveita) o reconhecedor. Baixa o modelo na primeira vez. */
 async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor> {
   if (reconhecedor) return reconhecedor
+
+  // As sondas entram antes de a biblioteca carregar: uma biblioteca que guarde
+  // a referência do `fetch` ao ser importada escaparia de uma troca posterior —
+  // foi o que aconteceu na primeira versão disto.
+  arquivosBuscados = []
+  recadosDaBiblioteca = []
+  const pararDeEspiar = espiarPedidos()
+  const pararDeOuvir = ouvirRecados()
+
   const lib = await carregarBiblioteca()
 
   // O andamento vem peça por peça; o que interessa mostrar é o total.
@@ -367,8 +411,6 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
   let ultimo: unknown = null
   trilha = []
   listagemDoServidor = ''
-  arquivosBuscados = []
-  const pararDeEspiar = espiarPedidos()
 
   for (let i = 0; i < fila.length; i += 1) {
     const tentativa = fila[i]
@@ -383,6 +425,7 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
       // Guarda a que funcionou: nas próximas visitas ela vem primeiro.
       guardarLista(CHAVE_ESCOLHA, [chaveDa(tentativa)])
       pararDeEspiar()
+      pararDeOuvir()
       return reconhecedor
     } catch (erro) {
       reconhecedor = null
@@ -417,6 +460,7 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
   // poupa quem está usando de ter de rodar um teste à parte para contar o que
   // aconteceu.
   pararDeEspiar()
+  pararDeOuvir()
   try {
     listagemDoServidor = await conferirModelos()
   } catch (erro) {
