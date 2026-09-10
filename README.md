@@ -151,12 +151,17 @@ som é usado. Limite de 120 MB por arquivo, que já são horas de conversa.
 - O reconhecimento é o **Whisper** (código aberto), na versão `base`, que roda
   **dentro do navegador**. O modelo baixa uma vez (~80 MB), fica guardado e
   depois funciona até sem internet.
-- Nem toda versão comprimida do modelo abre em todo navegador: a compressão em
-  blocos que os acervos publicam hoje é recusada pelo motor com
-  "Missing required scale". A página tenta as compressões em ordem — `int8`,
-  `uint8`, `q8` e, em último caso, o modelo inteiro sem compressão (~290 MB) —,
-  **guarda a que funcionou** para as próximas visitas e não repete as que já
-  falharam, porque cada tentativa frustrada custa dezenas de megabytes.
+- A biblioteca está presa na **versão 3** de propósito. A 4 sonda todos os
+  formatos publicados e carrega um por conta própria, ignorando o pedido: mesmo
+  pedindo o modelo sem compressão, ela abria um de 4 bits e o motor recusava com
+  "Missing required scale". Ver `src/lib/transcricao.ts`.
+- A página ainda tenta as compressões em ordem — `q8`, depois `int8` e, em
+  último caso, o modelo inteiro sem compressão (~290 MB) —, **guarda a que
+  funcionou** para as próximas visitas e não repete as que já falharam, porque
+  cada tentativa frustrada custa dezenas de megabytes.
+- Quando falha, a explicação técnica traz a versão do motor, a trilha das
+  tentativas, os arquivos que foram realmente buscados e os avisos da própria
+  biblioteca — foi o que permitiu achar o defeito acima.
 - **O áudio não sai do aparelho.** Nenhum servidor recebe o arquivo — o que
   importa quando é uma conversa particular.
 - Não custa nada, não pede cadastro nem chave.

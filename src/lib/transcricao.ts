@@ -7,12 +7,23 @@
  * aparelho** — o que importa quando o arquivo é uma conversa particular do
  * WhatsApp.
  *
- * A biblioteca (`@huggingface/transformers`) tem o mesmo defeito que a da voz
- * natural: manda o `onnxruntime-web` buscar o WebAssembly num CDN, no endereço
- * da versão que ela mesma fixou — aqui, uma versão de desenvolvimento. Se esse
- * endereço não existir, a transcrição falha com uma mensagem sobre "rede".
- * Por isso o motor é servido pela própria página, em `public/motor/transcricao/`
- * (ver `scripts/preparar-motor.mjs`).
+ * Dois cuidados com a biblioteca (`@huggingface/transformers`):
+ *
+ * 1. Ela tem o mesmo defeito que a da voz natural: manda o `onnxruntime-web`
+ *    buscar o WebAssembly num CDN, no endereço da versão que ela mesma fixou —
+ *    uma versão de desenvolvimento. Se esse endereço não existir, a transcrição
+ *    falha com uma mensagem sobre "rede". Por isso o motor é servido pela
+ *    própria página, em `public/motor/transcricao/` (ver
+ *    `scripts/preparar-motor.mjs`), e preso a uma versão estável pelo
+ *    `overrides` do package.json.
+ * 2. **A versão está presa na 3 de propósito.** A 4 sonda todos os formatos
+ *    publicados do modelo e carrega um por conta própria, sem respeitar o que
+ *    se pede em `dtype`: pedindo `fp32` — o modelo sem compressão — ela abria um
+ *    arquivo de 4 bits, e o motor recusava com
+ *    `TransposeDQWeightsForMatMulNBits: Missing required scale`. O rastro que
+ *    provou isso está nas sondas mais abaixo: os arquivos realmente buscados
+ *    incluíam `_q4`, `_q2`, `_bnb4` e mais sete formatos que nunca foram
+ *    pedidos.
  */
 
 export class ErroDeTranscricao extends Error {
@@ -54,10 +65,9 @@ export const MODELOS = ['Xenova/whisper-base', 'onnx-community/whisper-base']
  * scale", em qualquer versão testada e mesmo com o otimizador de grafo
  * desligado. Não adianta insistir nela.
  *
- * `int8` e `uint8` são a compressão antiga, feita valor a valor: não têm blocos,
- * não passam por essa engrenagem e ocupam o mesmo tamanho. Por isso vêm antes.
- * `fp32` é o modelo sem compressão nenhuma — não há o que dar errado, mas são
- * quase 300 MB, então fica por último.
+ * `q8` é a compressão canônica desta versão da biblioteca — a que a maior parte
+ * do mundo usa para o Whisper no navegador. `int8` e `fp32` ficam como reserva,
+ * e o último, sem compressão nenhuma, custa quase 300 MB.
  */
 interface Tentativa {
   modelo: string
@@ -67,10 +77,9 @@ interface Tentativa {
 }
 
 export const TENTATIVAS: Tentativa[] = [
-  { modelo: MODELOS[1], tipo: 'int8', mb: 80 },
-  { modelo: MODELOS[1], tipo: 'uint8', mb: 80 },
   { modelo: MODELOS[0], tipo: 'q8', mb: 80 },
   { modelo: MODELOS[1], tipo: 'q8', mb: 80 },
+  { modelo: MODELOS[1], tipo: 'int8', mb: 80 },
   { modelo: MODELOS[1], tipo: 'fp32', mb: 290 },
 ]
 
