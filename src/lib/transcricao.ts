@@ -44,6 +44,22 @@ export class ErroDeTranscricao extends Error {
  * encontrado: um modelo que não abre é tão inútil quanto um que não existe.
  */
 export const MODELOS = ['Xenova/whisper-base', 'onnx-community/whisper-base']
+
+/**
+ * A ordem das tentativas.
+ *
+ * Além de trocar de acervo, vale desligar o **otimizador de grafo** do motor:
+ * foi ele quem recusou os pesos comprimidos ("Missing required scale", numa
+ * passagem chamada `TransposeDQWeightsForMatMulNBits`). O modelo estava bom; o
+ * atalho que o motor tentava aplicar nele é que não estava. Sem o otimizador a
+ * sessão abre igual, só perde alguma velocidade.
+ */
+const TENTATIVAS: { modelo: string; otimizar: boolean }[] = [
+  { modelo: MODELOS[0], otimizar: true },
+  { modelo: MODELOS[0], otimizar: false },
+  { modelo: MODELOS[1], otimizar: true },
+  { modelo: MODELOS[1], otimizar: false },
+]
 /** Tamanho aproximado do download, em megabytes, para avisar antes. */
 export const TAMANHO_MB_DA_TRANSCRICAO = 80
 
@@ -84,7 +100,7 @@ interface Biblioteca {
     opcoes?: Record<string, unknown>,
   ) => Promise<Reconhecedor>
   env: {
-    backends?: { onnx?: { wasm?: Record<string, unknown> } }
+    backends?: { onnx?: { wasm?: Record<string, unknown>; versions?: { web?: string } } }
     allowLocalModels?: boolean
   }
 }
@@ -126,14 +142,34 @@ async function carregarBiblioteca(): Promise<Biblioteca> {
   }
   lib.env.allowLocalModels = false
 
+  versaoDoMotor = lib.env?.backends?.onnx?.versions?.web ?? null
   biblioteca = lib
   return lib
 }
 
+/**
+ * O que o motor de transcrição está usando: versão e endereço do WebAssembly.
+ *
+ * Vai junto na explicação técnica de qualquer falha — foi justamente a versão
+ * do motor que causou o problema mais difícil desta função, e sem ela na mão a
+ * conversa vira adivinhação.
+ */
+export async function diagnosticoDoMotor(): Promise<{ versao: string | null; caminhos: unknown }> {
+  const lib = await carregarBiblioteca()
+  const onnx = lib.env?.backends?.onnx
+  return { versao: onnx?.versions?.web ?? null, caminhos: onnx?.wasm?.wasmPaths ?? null }
+}
+
+/** A versão do motor, guardada assim que a biblioteca carrega. */
+let versaoDoMotor: string | null = null
+
 /** Traduz a falha da biblioteca numa frase que ajuda quem está lendo. */
 function comoErro(erro: unknown): ErroDeTranscricao {
   if (erro instanceof ErroDeTranscricao) return erro
-  const texto = erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro)
+  const cru = erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro)
+  // A versão do motor entra em toda explicação técnica: foi ela a causa do
+  // problema mais difícil desta função.
+  const texto = versaoDoMotor ? `${cru} [motor ${versaoDoMotor}]` : cru
 
   if (/abort|cancel/i.test(texto)) return new ErroDeTranscricao('Transcrição cancelada.', texto)
   if (/out of memory|allocat|RangeError|OOM/i.test(texto)) {
@@ -212,7 +248,7 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
   }
 
   let ultimo: unknown = null
-  for (const modelo of MODELOS) {
+  for (const { modelo, otimizar } of TENTATIVAS) {
     pesos.clear()
     try {
       reconhecedor = await lib.pipeline('automatic-speech-recognition', modelo, {
@@ -221,6 +257,9 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
         dtype: 'q8',
         device: 'wasm',
         progress_callback: progresso,
+        // Desligar o otimizador de grafo é a saída quando é ele quem recusa o
+        // modelo: a sessão abre igual, só sem os atalhos que ele acrescentaria.
+        ...(otimizar ? {} : { session_options: { graphOptimizationLevel: 'disabled' } }),
       })
       return reconhecedor
     } catch (erro) {
@@ -229,7 +268,7 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
       const texto = erro instanceof Error ? erro.message : String(erro)
       // Cancelar é uma decisão da pessoa: não se insiste contra ela.
       if (/abort|cancel/i.test(texto)) break
-      console.warn('[transcrição] o acervo', modelo, 'não serviu; tentando o próximo —', texto)
+      console.warn('[transcrição]', modelo, otimizar ? '' : '(sem otimizador)', 'não serviu —', texto)
       aoAndar?.({
         etapa: 'modelo',
         fracao: -1,

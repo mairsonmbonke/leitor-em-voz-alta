@@ -27,13 +27,15 @@ const ARQUIVOS = [
 
 /**
  * A transcrição tem o mesmo problema, e é o próprio `@huggingface/transformers`
- * que o cria: ele fixa no código uma versão de desenvolvimento do
- * `onnxruntime-web` e a pede a um CDN. Trazendo o motor dele para cá, o
- * endereço deixa de importar.
+ * que o cria: ele pede o `onnxruntime-web` a um CDN, no endereço da versão que
+ * fixou no código — uma versão de **desenvolvimento**, cujo otimizador de grafo
+ * recusava os pesos comprimidos do Whisper ("Missing required scale"). O
+ * `overrides` do package.json prende o projeto inteiro a uma versão estável, e
+ * é dela que estes arquivos saem.
  */
 const DA_TRANSCRICAO = [
-  'node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm',
-  'node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs',
+  'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm',
+  'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs',
 ]
 
 async function copiar(lista, pasta, etiqueta) {
