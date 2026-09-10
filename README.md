@@ -151,6 +151,12 @@ som é usado. Limite de 120 MB por arquivo, que já são horas de conversa.
 - O reconhecimento é o **Whisper** (código aberto), na versão `base`, que roda
   **dentro do navegador**. O modelo baixa uma vez (~80 MB), fica guardado e
   depois funciona até sem internet.
+- Nem toda versão comprimida do modelo abre em todo navegador: a compressão em
+  blocos que os acervos publicam hoje é recusada pelo motor com
+  "Missing required scale". A página tenta as compressões em ordem — `int8`,
+  `uint8`, `q8` e, em último caso, o modelo inteiro sem compressão (~290 MB) —,
+  **guarda a que funcionou** para as próximas visitas e não repete as que já
+  falharam, porque cada tentativa frustrada custa dezenas de megabytes.
 - **O áudio não sai do aparelho.** Nenhum servidor recebe o arquivo — o que
   importa quando é uma conversa particular.
 - Não custa nada, não pede cadastro nem chave.

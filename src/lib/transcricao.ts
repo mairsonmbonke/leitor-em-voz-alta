@@ -48,18 +48,67 @@ export const MODELOS = ['Xenova/whisper-base', 'onnx-community/whisper-base']
 /**
  * A ordem das tentativas.
  *
- * Além de trocar de acervo, vale desligar o **otimizador de grafo** do motor:
- * foi ele quem recusou os pesos comprimidos ("Missing required scale", numa
- * passagem chamada `TransposeDQWeightsForMatMulNBits`). O modelo estava bom; o
- * atalho que o motor tentava aplicar nele é que não estava. Sem o otimizador a
- * sessão abre igual, só perde alguma velocidade.
+ * O que derruba a transcrição não é baixar o modelo — é o motor conseguir abrir
+ * o arquivo baixado. A compressão `q8` dos acervos atuais usa quantização em
+ * blocos (`MatMulNBits`), e o `onnxruntime-web` a recusa com "Missing required
+ * scale", em qualquer versão testada e mesmo com o otimizador de grafo
+ * desligado. Não adianta insistir nela.
+ *
+ * `int8` e `uint8` são a compressão antiga, feita valor a valor: não têm blocos,
+ * não passam por essa engrenagem e ocupam o mesmo tamanho. Por isso vêm antes.
+ * `fp32` é o modelo sem compressão nenhuma — não há o que dar errado, mas são
+ * quase 300 MB, então fica por último.
  */
-const TENTATIVAS: { modelo: string; otimizar: boolean }[] = [
-  { modelo: MODELOS[0], otimizar: true },
-  { modelo: MODELOS[0], otimizar: false },
-  { modelo: MODELOS[1], otimizar: true },
-  { modelo: MODELOS[1], otimizar: false },
+interface Tentativa {
+  modelo: string
+  tipo: string
+  /** Tamanho aproximado do download, para avisar antes de começar. */
+  mb: number
+}
+
+export const TENTATIVAS: Tentativa[] = [
+  { modelo: MODELOS[1], tipo: 'int8', mb: 80 },
+  { modelo: MODELOS[1], tipo: 'uint8', mb: 80 },
+  { modelo: MODELOS[0], tipo: 'q8', mb: 80 },
+  { modelo: MODELOS[1], tipo: 'q8', mb: 80 },
+  { modelo: MODELOS[1], tipo: 'fp32', mb: 290 },
 ]
+
+export const chaveDa = (t: Tentativa) => `${t.modelo}|${t.tipo}`
+
+const CHAVE_ESCOLHA = 'leitor.transcricao.escolha'
+const CHAVE_RECUSADAS = 'leitor.transcricao.recusadas'
+
+function lerLista(chave: string): string[] {
+  try {
+    const salvo = JSON.parse(localStorage.getItem(chave) ?? '[]')
+    return Array.isArray(salvo) ? salvo.filter((x) => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function guardarLista(chave: string, lista: string[]): void {
+  try {
+    localStorage.setItem(chave, JSON.stringify(lista))
+  } catch {
+    /* navegador com armazenamento bloqueado */
+  }
+}
+
+/**
+ * A ordem de hoje: o que já funcionou neste navegador vem primeiro, e o que já
+ * foi recusado sai da frente. Cada tentativa frustrada custa dezenas de
+ * megabytes — não vale repeti-las a cada visita.
+ */
+export function tentativasDeHoje(): Tentativa[] {
+  const escolhida = lerLista(CHAVE_ESCOLHA)[0]
+  const recusadas = new Set(lerLista(CHAVE_RECUSADAS))
+  const vale = TENTATIVAS.filter((t) => !recusadas.has(chaveDa(t)) || chaveDa(t) === escolhida)
+  const lista = vale.length > 0 ? vale : TENTATIVAS
+  const boa = lista.find((t) => chaveDa(t) === escolhida)
+  return boa ? [boa, ...lista.filter((t) => t !== boa)] : lista
+}
 /** Tamanho aproximado do download, em megabytes, para avisar antes. */
 export const TAMANHO_MB_DA_TRANSCRICAO = 80
 
@@ -228,6 +277,7 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
 
   // O andamento vem peça por peça; o que interessa mostrar é o total.
   const pesos = new Map<string, { feito: number; total: number }>()
+  let tamanhoEsperado = TENTATIVAS[0].mb
   const progresso = (evento: { status?: string; file?: string; loaded?: number; total?: number }) => {
     if (evento.status !== 'progress' || !evento.file) return
     pesos.set(evento.file, { feito: evento.loaded ?? 0, total: evento.total ?? 0 })
@@ -243,24 +293,25 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
       descricao:
         total > 0
           ? `Baixando o modelo de transcrição: ${(feito / 1024 / 1024).toFixed(1)} MB de ${(total / 1024 / 1024).toFixed(1)} MB`
-          : 'Baixando o modelo de transcrição…',
+          : `Baixando o modelo de transcrição (cerca de ${tamanhoEsperado} MB)…`,
     })
   }
 
+  const fila = tentativasDeHoje()
   let ultimo: unknown = null
-  for (const { modelo, otimizar } of TENTATIVAS) {
+
+  for (let i = 0; i < fila.length; i += 1) {
+    const tentativa = fila[i]
     pesos.clear()
+    tamanhoEsperado = tentativa.mb
     try {
-      reconhecedor = await lib.pipeline('automatic-speech-recognition', modelo, {
-        // `q8` é a versão comprimida: cabe no celular e é o padrão para
-        // WebAssembly. Sem ela o download seria três vezes maior.
-        dtype: 'q8',
+      reconhecedor = await lib.pipeline('automatic-speech-recognition', tentativa.modelo, {
+        dtype: tentativa.tipo,
         device: 'wasm',
         progress_callback: progresso,
-        // Desligar o otimizador de grafo é a saída quando é ele quem recusa o
-        // modelo: a sessão abre igual, só sem os atalhos que ele acrescentaria.
-        ...(otimizar ? {} : { session_options: { graphOptimizationLevel: 'disabled' } }),
       })
+      // Guarda a que funcionou: nas próximas visitas ela vem primeiro.
+      guardarLista(CHAVE_ESCOLHA, [chaveDa(tentativa)])
       return reconhecedor
     } catch (erro) {
       reconhecedor = null
@@ -268,12 +319,21 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
       const texto = erro instanceof Error ? erro.message : String(erro)
       // Cancelar é uma decisão da pessoa: não se insiste contra ela.
       if (/abort|cancel/i.test(texto)) break
-      console.warn('[transcrição]', modelo, otimizar ? '' : '(sem otimizador)', 'não serviu —', texto)
-      aoAndar?.({
-        etapa: 'modelo',
-        fracao: -1,
-        descricao: 'Esse modelo não abriu neste navegador; tentando outro…',
-      })
+
+      console.warn('[transcrição]', chaveDa(tentativa), 'não serviu —', texto)
+      guardarLista(CHAVE_RECUSADAS, [...new Set([...lerLista(CHAVE_RECUSADAS), chaveDa(tentativa)])])
+
+      const proxima = fila[i + 1]
+      if (proxima) {
+        aoAndar?.({
+          etapa: 'modelo',
+          fracao: -1,
+          descricao:
+            `Este modelo não abriu neste navegador. Tentando outro` +
+            (proxima.mb > 150 ? ` (sem compressão, ${proxima.mb} MB)` : '') +
+            '…',
+        })
+      }
     }
   }
   throw comoErro(ultimo)
