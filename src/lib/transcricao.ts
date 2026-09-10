@@ -27,15 +27,23 @@ export class ErroDeTranscricao extends Error {
 }
 
 /**
- * Os acervos de onde o modelo pode vir, tentados nesta ordem.
+ * De onde o modelo pode vir, tentados nesta ordem.
  *
- * É o mesmo modelo (Whisper `base`) publicado em dois lugares. Nenhum dos dois
- * é garantido: um acervo pode ser reorganizado, e a versão comprimida que
- * pedimos (`q8`, gravada com o sufixo `_quantized`) pode não existir num deles.
- * Tentar o segundo custa pouco e evita que a transcrição inteira caia por causa
- * de um arquivo fora do lugar.
+ * É o mesmo modelo (Whisper `base`) publicado em dois acervos, e as duas
+ * versões são comprimidas (`q8`) para caber no celular. A ordem não é
+ * arbitrária: baixar o arquivo é a parte fácil — a difícil é o motor conseguir
+ * montar a sessão com ele.
+ *
+ * O acervo `onnx-community` publica os pesos num formato de quantização mais
+ * novo (blocos, `MatMulNBits`), e o `onnxruntime-web` que vem com a biblioteca
+ * recusa esses arquivos com "Missing required scale" — o modelo baixa inteiro e
+ * só falha no fim, na hora de abrir. O `Xenova` usa a quantização mais antiga,
+ * que roda em WebAssembly há anos. Por isso ele vem primeiro.
+ *
+ * E a troca acontece em **qualquer** falha, não só quando o arquivo não é
+ * encontrado: um modelo que não abre é tão inútil quanto um que não existe.
  */
-export const MODELOS = ['onnx-community/whisper-base', 'Xenova/whisper-base']
+export const MODELOS = ['Xenova/whisper-base', 'onnx-community/whisper-base']
 /** Tamanho aproximado do download, em megabytes, para avisar antes. */
 export const TAMANHO_MB_DA_TRANSCRICAO = 80
 
@@ -135,6 +143,15 @@ function comoErro(erro: unknown): ErroDeTranscricao {
       texto,
     )
   }
+  // O motor baixou o modelo inteiro e não conseguiu abri-lo: quantização que
+  // esta versão do `onnxruntime-web` não entende.
+  if (/create a session|qdq_actions|MatMulNBits|Missing required scale|INVALID_GRAPH|INVALID_PROTOBUF/i.test(texto)) {
+    return new ErroDeTranscricao(
+      'O modelo de transcrição foi baixado, mas o motor deste navegador não conseguiu abri-lo: ' +
+        'o formato comprimido não é compatível.',
+      texto,
+    )
+  }
   if (/wasm|WebAssembly|magic word|compile/i.test(texto)) {
     return new ErroDeTranscricao(
       'O motor de transcrição não pôde ser carregado neste navegador.',
@@ -210,9 +227,14 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
       reconhecedor = null
       ultimo = erro
       const texto = erro instanceof Error ? erro.message : String(erro)
-      // Só vale tentar o outro acervo quando o problema foi achar o arquivo.
-      if (!/could not locate|404|not found/i.test(texto)) break
+      // Cancelar é uma decisão da pessoa: não se insiste contra ela.
+      if (/abort|cancel/i.test(texto)) break
       console.warn('[transcrição] o acervo', modelo, 'não serviu; tentando o próximo —', texto)
+      aoAndar?.({
+        etapa: 'modelo',
+        fracao: -1,
+        descricao: 'Esse modelo não abriu neste navegador; tentando outro…',
+      })
     }
   }
   throw comoErro(ultimo)
