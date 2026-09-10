@@ -45,7 +45,7 @@ import {
 } from './lib/documento'
 import { ErroDeOcr, ehHeic, reconhecerImagem, reconhecerPaginas } from './lib/ocr'
 import { ErroDeAudio, prepararAudio } from './lib/audio'
-import { ErroDeTranscricao, TAMANHO_MB_DA_TRANSCRICAO, transcrever } from './lib/transcricao'
+import { ErroDeTranscricao, TAMANHO_MB_DA_TRANSCRICAO, conferirModelos, transcrever } from './lib/transcricao'
 import { ErroDeTraducao, detectarIdioma, emParagrafos, traduzirParagrafos } from './lib/traducao'
 import * as drive from './lib/drive'
 import { formatDuration } from './lib/format'
@@ -142,6 +142,8 @@ export function Leitor() {
   const [verDetalhe, setVerDetalhe] = useState(false)
   /** Explicação técnica de uma falha ao abrir um arquivo, para o "Ver detalhes". */
   const [detalheDoRecado, setDetalheDoRecado] = useState<string | null>(null)
+  /** Resultado do teste do modelo de transcrição, quando pedido. */
+  const [testeDaTranscricao, setTesteDaTranscricao] = useState<string | null>(null)
   /** Como desistir de um download de 60 MB que está demorando. */
   const baixadorRef = useRef<AbortController | null>(null)
   const [arquivo, setArquivo] = useState<string | null>(null)
@@ -1326,6 +1328,39 @@ export function Leitor() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="ajuste ajuste--teste">
+            <span className="field__label">Transcrição de áudio</span>
+            <button
+              type="button"
+              className="btn btn--sm"
+              onClick={() => {
+                setTesteDaTranscricao('Perguntando ao servidor…')
+                void conferirModelos()
+                  .then(setTesteDaTranscricao)
+                  .catch((erro: unknown) =>
+                    setTesteDaTranscricao(erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro)),
+                  )
+              }}
+            >
+              Testar o modelo
+            </button>
+            <p className="field__hint">
+              Só pergunta ao servidor quais arquivos existem — alguns kilobytes, sem baixar o modelo.
+            </p>
+            {testeDaTranscricao ? (
+              <>
+                <code className="leitor__detalhe">{testeDaTranscricao}</code>
+                <button
+                  type="button"
+                  className="btn btn--sm btn--ghost"
+                  onClick={() => void navigator.clipboard?.writeText(testeDaTranscricao).catch(() => undefined)}
+                >
+                  Copiar
+                </button>
+              </>
+            ) : null}
           </div>
 
           <div className="ajuste ajuste--drive">

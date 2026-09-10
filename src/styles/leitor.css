@@ -355,6 +355,10 @@ body {
   display: block;
   width: 100%;
   margin-top: 6px;
+  /* O diagnóstico vem em linhas: uma por formato de arquivo. */
+  white-space: pre-wrap;
+  max-height: 40vh;
+  overflow-y: auto;
   padding: 7px 9px;
   border-radius: var(--radius-sm);
   background: var(--bg-input);

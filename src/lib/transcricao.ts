@@ -153,6 +153,10 @@ interface Biblioteca {
     modelo: string,
     opcoes?: Record<string, unknown>,
   ) => Promise<Reconhecedor>
+  ModelRegistry?: {
+    get_available_dtypes: (modelo: string, opcoes?: Record<string, unknown>) => Promise<string[]>
+    get_pipeline_files: (tarefa: string, modelo: string, opcoes?: Record<string, unknown>) => Promise<string[]>
+  }
   env: {
     backends?: { onnx?: { wasm?: Record<string, unknown>; versions?: { web?: string } } }
     allowLocalModels?: boolean
@@ -446,6 +450,50 @@ export async function transcrever(
   } catch (erro) {
     throw comoErro(erro)
   }
+}
+
+/**
+ * Pergunta ao servidor **quais arquivos** cada formato resolveria, sem baixar
+ * nenhum deles.
+ *
+ * Existe por um motivo concreto: as tentativas todas falhavam com a mesma
+ * mensagem, inclusive a do modelo sem compressão — que não tem peso quantizado
+ * e portanto não podia dar aquele erro. Ou o formato pedido não chega ao arquivo
+ * carregado, ou o arquivo não é o que o nome diz. Esta função mostra os nomes
+ * de verdade, e custa alguns kilobytes em vez de 80 MB.
+ */
+export async function conferirModelos(): Promise<string> {
+  const lib = await carregarBiblioteca()
+  const registro = lib.ModelRegistry
+  const linhas: string[] = [`motor ${versaoDoMotor ?? 'desconhecido'}`]
+
+  if (!registro?.get_pipeline_files) {
+    return [...linhas, 'esta versão da biblioteca não sabe listar os arquivos'].join('\n')
+  }
+
+  for (const modelo of MODELOS) {
+    try {
+      const tipos = await registro.get_available_dtypes(modelo)
+      linhas.push(`${modelo}: formatos ${tipos.length > 0 ? tipos.join(', ') : '(nenhum)'}`)
+    } catch (erro) {
+      linhas.push(`${modelo}: não deu para listar os formatos — ${(erro as Error).message?.slice(0, 70)}`)
+      continue
+    }
+
+    for (const tipo of ['fp32', 'int8', 'q8']) {
+      try {
+        const arquivos = await registro.get_pipeline_files('automatic-speech-recognition', modelo, {
+          device: 'wasm',
+          dtype: tipo,
+        })
+        const onnx = arquivos.filter((a) => a.endsWith('.onnx'))
+        linhas.push(`  ${tipo} → ${onnx.length > 0 ? onnx.join(', ') : arquivos.join(', ')}`)
+      } catch (erro) {
+        linhas.push(`  ${tipo} → falhou: ${(erro as Error).message?.slice(0, 70)}`)
+      }
+    }
+  }
+  return linhas.join('\n')
 }
 
 /** Esquece o modelo carregado, devolvendo a memória ao aparelho. */
