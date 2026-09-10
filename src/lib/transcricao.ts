@@ -230,6 +230,9 @@ let versaoDoMotor: string | null = null
  */
 let trilha: string[] = []
 
+/** A listagem do que existe no servidor, buscada quando tudo falha. */
+let listagemDoServidor = ''
+
 /** Resume uma falha em duas palavras, para caber na trilha. */
 function porQueNaoServiu(texto: string): string {
   if (/could not locate|404|not found/i.test(texto)) return 'não existe'
@@ -249,6 +252,7 @@ function comoErro(erro: unknown): ErroDeTranscricao {
   const partes = [cru]
   if (versaoDoMotor) partes.push(`[motor ${versaoDoMotor}]`)
   if (trilha.length > 0) partes.push(`[tentativas: ${trilha.join('; ')}]`)
+  if (listagemDoServidor) partes.push(`\n\n--- o que existe no servidor ---\n${listagemDoServidor}`)
   const texto = partes.join(' ')
 
   if (/abort|cancel/i.test(texto)) return new ErroDeTranscricao('Transcrição cancelada.', texto)
@@ -331,6 +335,7 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
   const fila = tentativasDeHoje()
   let ultimo: unknown = null
   trilha = []
+  listagemDoServidor = ''
 
   for (let i = 0; i < fila.length; i += 1) {
     const tentativa = fila[i]
@@ -372,6 +377,15 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
         })
       }
     }
+  }
+  // Antes de desistir, pergunta ao servidor o que existe de verdade e junta a
+  // resposta à explicação. São alguns kilobytes, só quando tudo já falhou — e
+  // poupa quem está usando de ter de rodar um teste à parte para contar o que
+  // aconteceu.
+  try {
+    listagemDoServidor = await conferirModelos()
+  } catch (erro) {
+    listagemDoServidor = `não deu para listar: ${(erro as Error).message?.slice(0, 80)}`
   }
   throw comoErro(ultimo)
 }
