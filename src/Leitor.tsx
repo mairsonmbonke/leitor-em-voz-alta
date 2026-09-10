@@ -150,6 +150,8 @@ export function Leitor() {
   const [detalheDoRecado, setDetalheDoRecado] = useState<string | null>(null)
   /** Resultado do teste do modelo de transcrição, quando pedido. */
   const [testeDaTranscricao, setTesteDaTranscricao] = useState<string | null>(null)
+  /** A última falha foi na transcrição? Só então o botão de limpar faz sentido. */
+  const [falhouTranscrever, setFalhouTranscrever] = useState(false)
   /** Como desistir de um download de 60 MB que está demorando. */
   const baixadorRef = useRef<AbortController | null>(null)
   const [arquivo, setArquivo] = useState<string | null>(null)
@@ -554,6 +556,7 @@ export function Leitor() {
       setRecado(null)
       setDetalheDoRecado(null)
       setVerDetalhe(false)
+      setFalhouTranscrever(false)
 
       const controle = new AbortController()
       cancelador.current = controle
@@ -644,6 +647,7 @@ export function Leitor() {
           erro instanceof ErroDeTranscricao
         setRecado(conhecido ? erro.message : 'Não foi possível abrir este arquivo.')
         // Quando existe explicação técnica, ela fica a um toque de distância.
+        setFalhouTranscrever(erro instanceof ErroDeTranscricao)
         if (erro instanceof ErroDeTranscricao && erro.detalhe) setDetalheDoRecado(erro.detalhe)
         else if (!conhecido) setDetalheDoRecado(erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro))
       } finally {
@@ -1505,6 +1509,26 @@ export function Leitor() {
               fica guardado e aparece aqui, sem precisar do console. */}
           {detalheDoRecado && aviso === recado ? (
             <span className="leitor__aviso-acoes">
+              {/* Quando a transcrição falha sempre igual, o culpado costuma ser
+                  um arquivo estragado guardado no navegador. O botão fica aqui,
+                  onde a pessoa já está olhando, e não escondido nos ajustes. */}
+              {falhouTranscrever ? (
+                <button
+                  type="button"
+                  className="btn btn--sm btn--accent"
+                  onClick={() => {
+                    setDetalheDoRecado('Limpando o que estava guardado…')
+                    setVerDetalhe(true)
+                    void esquecerModelo()
+                      .then((relato) =>
+                        setDetalheDoRecado(`${relato}\n\nPronto. Abra o áudio de novo — ele vai baixar limpo.`),
+                      )
+                      .catch((erro: unknown) => setDetalheDoRecado(String(erro)))
+                  }}
+                >
+                  Limpar e baixar de novo
+                </button>
+              ) : null}
               <button type="button" className="btn btn--sm btn--ghost" onClick={() => setVerDetalhe((v) => !v)}>
                 {verDetalhe ? 'Ocultar detalhes' : 'Ver detalhes'}
               </button>
