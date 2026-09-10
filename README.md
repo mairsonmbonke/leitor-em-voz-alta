@@ -175,6 +175,12 @@ Duas ressalvas honestas: a versão `base` entende bem português falado normal,
 mas erra em nomes próprios, números e áudio com muito barulho de fundo — vale
 revisar. E é lenta em celular: espere alguns minutos para cada minuto de áudio.
 
+Se um dia parar de funcionar, o aviso de erro traz **Ver detalhes** e **Copiar**,
+e o detalhe inclui a versão do motor, a trilha das tentativas, os arquivos
+realmente buscados e os avisos da própria biblioteca. Há também um botão
+**Limpar e baixar de novo**, para o caso de um arquivo ter entrado estragado no
+cache do navegador.
+
 O áudio do WhatsApp é Opus dentro de um `.ogg`, e nem todo Safari abre esse
 formato. Quando o navegador recusa, entra um decodificador de Opus que roda na
 própria página; se nem ele der conta, a página avisa e sugere converter para MP3
