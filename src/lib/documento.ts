@@ -1,3 +1,5 @@
+import { ehAudio } from './audio.ts'
+
 /**
  * Leitura do texto de um arquivo anexado, dentro do próprio navegador.
  *
@@ -8,6 +10,9 @@
  * As bibliotecas de PDF e de descompactação entram por `import()` dinâmico,
  * então só são baixadas quando alguém realmente abre um arquivo desses.
  */
+
+/** Um áudio comprimido de 120 MB já são horas de conversa. */
+const TAMANHO_MAXIMO_DE_AUDIO = 120 * 1024 * 1024
 
 export interface ArquivoLido {
   nome: string
@@ -20,6 +25,11 @@ export interface ArquivoLido {
    * documento digitalizado, cujas páginas viram imagens.
    */
   precisaOcr?: 'imagem' | 'pdf'
+  /**
+   * O arquivo é um áudio: as palavras estão faladas, e só saem por
+   * reconhecimento de fala. É o caso de um áudio do WhatsApp.
+   */
+  precisaTranscricao?: boolean
 }
 
 /** O que o seletor de arquivos oferece. */
@@ -38,6 +48,20 @@ export const TIPOS_ACEITOS = [
   '.webp',
   '.heic',
   '.heif',
+  '.opus',
+  '.ogg',
+  '.oga',
+  '.mp3',
+  '.m4a',
+  '.aac',
+  '.wav',
+  '.webm',
+  '.mp4',
+  '.mov',
+  '.amr',
+  '.3gp',
+  '.flac',
+  'audio/*',
   'text/plain',
   'text/markdown',
   'application/pdf',
@@ -295,8 +319,11 @@ async function lerTextoPuro(arquivo: File): Promise<ArquivoLido> {
 
 /** Abre o arquivo e devolve o texto pronto para a leitura em voz alta. */
 export async function extrairTexto(arquivo: File): Promise<ArquivoLido> {
-  if (arquivo.size > TAMANHO_MAXIMO) {
-    throw new ErroDeArquivo('Arquivo grande demais (o limite é 30 MB).')
+  // Áudio comprimido rende muitos minutos por megabyte: um limite de documento
+  // barraria uma conversa inteira sem motivo.
+  const limite = ehAudio(arquivo.name, arquivo.type) ? TAMANHO_MAXIMO_DE_AUDIO : TAMANHO_MAXIMO
+  if (arquivo.size > limite) {
+    throw new ErroDeArquivo(`Arquivo grande demais (o limite é ${Math.round(limite / 1024 / 1024)} MB).`)
   }
 
   const tipo = extensao(arquivo.name)
@@ -315,6 +342,9 @@ export async function extrairTexto(arquivo: File): Promise<ArquivoLido> {
     }
     if (ehArquivoDeImagem(tipo, arquivo.type)) {
       return { nome: arquivo.name, texto: '', precisaOcr: 'imagem' }
+    }
+    if (ehAudio(arquivo.name, arquivo.type)) {
+      return { nome: arquivo.name, texto: '', precisaTranscricao: true }
     }
     if (tipo === 'doc') {
       throw new ErroDeArquivo('O formato .doc (Word antigo) não é lido aqui. Salve como .docx ou PDF.')

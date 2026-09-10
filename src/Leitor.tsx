@@ -44,6 +44,8 @@ import {
   paginasComoImagens,
 } from './lib/documento'
 import { ErroDeOcr, ehHeic, reconhecerImagem, reconhecerPaginas } from './lib/ocr'
+import { ErroDeAudio, prepararAudio } from './lib/audio'
+import { ErroDeTranscricao, TAMANHO_MB_DA_TRANSCRICAO, transcrever } from './lib/transcricao'
 import { ErroDeTraducao, detectarIdioma, emParagrafos, traduzirParagrafos } from './lib/traducao'
 import * as drive from './lib/drive'
 import { formatDuration } from './lib/format'
@@ -572,6 +574,21 @@ export function Leitor() {
           etiqueta = `${lido.nome} · texto reconhecido`
         }
 
+        // Áudio (o do WhatsApp, entre outros): a fala vira texto aqui mesmo.
+        if (lido.precisaTranscricao) {
+          setAbrindo(false)
+          setTarefa({ nome: 'Áudio', etapa: 'Abrindo o áudio…', fracao: 0 })
+          const { amostras, segundos } = await prepararAudio(escolhido, escolhido.name)
+          if (controle.signal.aborted) throw new ErroDeTranscricao('Transcrição cancelada.')
+          texto = await transcrever(
+            amostras,
+            idioma,
+            ({ fracao, descricao }) => setTarefa({ nome: 'Áudio', etapa: descricao, fracao: Math.max(0, fracao) }),
+            controle.signal,
+          )
+          etiqueta = `${lido.nome} · ${formatDuration(segundos)} transcritos`
+        }
+
         // PDF digitalizado: cada página vira imagem e passa pelo mesmo caminho.
         if (lido.precisaOcr === 'pdf') {
           setAbrindo(false)
@@ -599,14 +616,20 @@ export function Leitor() {
 
         if (texto.trim().length === 0) {
           throw new ErroDeArquivo(
-            lido.precisaOcr
-              ? 'Não encontrei palavras legíveis nesta imagem. Tente uma foto mais nítida, bem iluminada e sem inclinação.'
-              : 'O arquivo foi aberto, mas não tem texto para ler.',
+            lido.precisaTranscricao
+              ? 'Não encontrei fala neste áudio.'
+              : lido.precisaOcr
+                ? 'Não encontrei palavras legíveis nesta imagem. Tente uma foto mais nítida, bem iluminada e sem inclinação.'
+                : 'O arquivo foi aberto, mas não tem texto para ler.',
           )
         }
         aplicarTexto(texto, etiqueta)
       } catch (erro) {
-        const conhecido = erro instanceof ErroDeArquivo || erro instanceof ErroDeOcr
+        const conhecido =
+          erro instanceof ErroDeArquivo ||
+          erro instanceof ErroDeOcr ||
+          erro instanceof ErroDeAudio ||
+          erro instanceof ErroDeTranscricao
         setRecado(conhecido ? erro.message : 'Não foi possível abrir este arquivo.')
       } finally {
         cancelador.current = null
@@ -879,7 +902,7 @@ export function Leitor() {
             <div className="soltar-aqui">
               <IconUpload size={26} />
               <p>Solte o arquivo para abrir</p>
-              <span>PDF, Word (.docx), OpenDocument (.odt) ou texto</span>
+              <span>PDF, Word (.docx), texto, foto ou áudio</span>
             </div>
           ) : null}
           <div className="cartao__topo">
@@ -1356,7 +1379,9 @@ export function Leitor() {
 
           <p className="ajuste__dica">
             Durante a leitura, clique em qualquer palavra do texto para continuar a partir dali — o trecho falado fica
-            destacado. Você também pode arrastar um PDF, um Word (.docx) ou um .txt para cima do texto.
+            destacado. Você também pode arrastar um PDF, um Word (.docx), um .txt, uma foto ou um{' '}
+            <strong>áudio do WhatsApp</strong> para cima do texto: o áudio vira texto no próprio aparelho
+            (~{TAMANHO_MB_DA_TRANSCRICAO} MB na primeira vez).
           </p>
         </aside>
       </main>

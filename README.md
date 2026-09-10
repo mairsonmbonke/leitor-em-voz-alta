@@ -7,8 +7,9 @@ enquanto se ouve.
 
 O texto pode ser colado, digitado, aberto de um arquivo **PDF, Word (`.docx`),
 OpenDocument (`.odt`) ou de texto (`.txt`, `.md`, `.csv`)**, trazido do **Google
-Drive**, ou **reconhecido dentro de fotos e PDFs digitalizados**. E pode ser
-**traduzido** entre os quatro idiomas, com o original preservado ao lado.
+Drive**, **reconhecido dentro de fotos e PDFs digitalizados**, ou **transcrito
+de um áudio** — inclusive de um áudio do WhatsApp. E pode ser **traduzido**
+entre os quatro idiomas, com o original preservado ao lado.
 
 Quase tudo roda no navegador de quem usa: a voz, a leitura dos arquivos e o
 reconhecimento de texto acontecem na própria máquina. Duas exceções, e só
@@ -135,6 +136,39 @@ idioma são baixados na primeira vez e ficam no cache.
 O texto reconhecido entra na área de leitura como qualquer outro: dá para
 revisar, corrigir, traduzir e ouvir.
 
+## Transcrever um áudio
+
+Abrir um arquivo de áudio pelo botão **Arquivo** (ou arrastando para cima do
+texto) transforma a fala em texto. A partir daí ele é um texto como outro
+qualquer: dá para ouvir, corrigir, traduzir e clicar em qualquer palavra.
+
+O caso que motivou isto é o **áudio do WhatsApp**: baixe o áudio da conversa e
+abra aqui. O arquivo costuma vir como `.opus` (Android e WhatsApp Web) ou
+`.m4a`/`.mp4` (ao compartilhar pelo iPhone) — os dois são aceitos, junto com
+`.mp3`, `.wav`, `.ogg`, `.aac`, `.flac`, `.amr`, `.webm` e vídeos, de onde só o
+som é usado. Limite de 120 MB por arquivo, que já são horas de conversa.
+
+- O reconhecimento é o **Whisper** (código aberto), na versão `base`, que roda
+  **dentro do navegador**. O modelo baixa uma vez (~80 MB), fica guardado e
+  depois funciona até sem internet.
+- **O áudio não sai do aparelho.** Nenhum servidor recebe o arquivo — o que
+  importa quando é uma conversa particular.
+- Não custa nada, não pede cadastro nem chave.
+- O idioma escolhido na tela (PT/EN/ES/DE) é o que o reconhecimento usa. Se o
+  áudio estiver noutro idioma, troque antes de abrir o arquivo.
+- Mostra o andamento e dá para **cancelar** a qualquer momento.
+- O texto sai em parágrafos de três frases, para ficar confortável de ler e de
+  ouvir. Erros de reconhecimento se corrigem no botão **Editar**.
+
+Duas ressalvas honestas: a versão `base` entende bem português falado normal,
+mas erra em nomes próprios, números e áudio com muito barulho de fundo — vale
+revisar. E é lenta em celular: espere alguns minutos para cada minuto de áudio.
+
+O áudio do WhatsApp é Opus dentro de um `.ogg`, e nem todo Safari abre esse
+formato. Quando o navegador recusa, entra um decodificador de Opus que roda na
+própria página; se nem ele der conta, a página avisa e sugere converter para MP3
+ou M4A.
+
 ## Traduzir
 
 O botão **Traduzir** abre um painel com dois campos e um botão:
@@ -244,8 +278,9 @@ em vez de falhar em silêncio, que o Drive ainda não foi ligado — o botão
 | Word `.docx` | o `.docx` é um zip: o `word/document.xml` é descompactado e lido |
 | OpenDocument `.odt` | mesma ideia, com o `content.xml` |
 | `.txt`, `.md`, `.csv` | lidos direto |
+| Áudio e vídeo | o som é decodificado no navegador e reconhecido pelo Whisper |
 
-Limite de 30 MB por arquivo. PDFs digitalizados (imagem, sem texto selecionável)
+Limite de 30 MB por arquivo (120 MB para áudio). PDFs digitalizados (imagem, sem texto selecionável)
 e o formato antigo `.doc` não dão para ler — nos dois casos a página explica o
 motivo em vez de falhar em silêncio. As bibliotecas de PDF e de descompactação
 só são baixadas quando alguém abre um arquivo desses; quem só cola texto carrega
@@ -302,6 +337,8 @@ src/
     tempos.ts      em que instante do áudio cai cada palavra
     documento.ts   texto de PDF, .docx, .odt, texto puro e páginas em imagem
     ocr.ts         reconhecimento do texto de fotos e páginas digitalizadas
+    audio.ts       abre o áudio (inclusive o Opus do WhatsApp) e prepara o som
+    transcricao.ts transforma a fala em texto, com o Whisper, no navegador
     traducao.ts    descoberta do idioma e tradução parágrafo a parágrafo
     drive.ts       abrir um arquivo do Google Drive, só o escolhido
     format.ts      duração em linguagem natural

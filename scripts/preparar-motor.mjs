@@ -25,18 +25,33 @@ const ARQUIVOS = [
   'node_modules/@diffusionstudio/piper-wasm/build/piper_phonemize.data',
 ]
 
-await mkdir(destino, { recursive: true })
+/**
+ * A transcrição tem o mesmo problema, e é o próprio `@huggingface/transformers`
+ * que o cria: ele fixa no código uma versão de desenvolvimento do
+ * `onnxruntime-web` e a pede a um CDN. Trazendo o motor dele para cá, o
+ * endereço deixa de importar.
+ */
+const DA_TRANSCRICAO = [
+  'node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm',
+  'node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs',
+]
 
-for (const caminho of ARQUIVOS) {
-  const origem = join(raiz, caminho)
-  const nome = caminho.split('/').at(-1)
-  try {
-    await stat(origem)
-  } catch {
-    console.error(`\n[voz natural] Arquivo não encontrado: ${caminho}\nRode "npm install" antes do build.\n`)
-    process.exit(1)
+async function copiar(lista, pasta, etiqueta) {
+  await mkdir(pasta, { recursive: true })
+  for (const caminho of lista) {
+    const origem = join(raiz, caminho)
+    const nome = caminho.split('/').at(-1)
+    try {
+      await stat(origem)
+    } catch {
+      console.error(`\n[${etiqueta}] Arquivo não encontrado: ${caminho}\nRode "npm install" antes do build.\n`)
+      process.exit(1)
+    }
+    await copyFile(origem, join(pasta, nome))
+    const { size } = await stat(join(pasta, nome))
+    console.log(`[${etiqueta}] ${nome} — ${(size / 1024 / 1024).toFixed(1)} MB`)
   }
-  await copyFile(origem, join(destino, nome))
-  const { size } = await stat(join(destino, nome))
-  console.log(`[voz natural] ${nome} — ${(size / 1024 / 1024).toFixed(1)} MB`)
 }
+
+await copiar(ARQUIVOS, destino, 'voz natural')
+await copiar(DA_TRANSCRICAO, join(destino, 'transcricao'), 'transcrição')
