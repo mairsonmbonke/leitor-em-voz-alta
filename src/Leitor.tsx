@@ -45,7 +45,13 @@ import {
 } from './lib/documento'
 import { ErroDeOcr, ehHeic, reconhecerImagem, reconhecerPaginas } from './lib/ocr'
 import { ErroDeAudio, prepararAudio } from './lib/audio'
-import { ErroDeTranscricao, TAMANHO_MB_DA_TRANSCRICAO, conferirModelos, transcrever } from './lib/transcricao'
+import {
+  ErroDeTranscricao,
+  TAMANHO_MB_DA_TRANSCRICAO,
+  conferirModelos,
+  esquecerModelo,
+  transcrever,
+} from './lib/transcricao'
 import { ErroDeTraducao, detectarIdioma, emParagrafos, traduzirParagrafos } from './lib/traducao'
 import * as drive from './lib/drive'
 import { formatDuration } from './lib/format'
@@ -1332,22 +1338,39 @@ export function Leitor() {
 
           <div className="ajuste ajuste--teste">
             <span className="field__label">Transcrição de áudio</span>
-            <button
-              type="button"
-              className="btn btn--sm"
-              onClick={() => {
-                setTesteDaTranscricao('Perguntando ao servidor…')
-                void conferirModelos()
-                  .then(setTesteDaTranscricao)
-                  .catch((erro: unknown) =>
-                    setTesteDaTranscricao(erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro)),
-                  )
-              }}
-            >
-              Testar o modelo
-            </button>
+            <div className="drive__acoes">
+              <button
+                type="button"
+                className="btn btn--sm btn--accent"
+                onClick={() => {
+                  setTesteDaTranscricao('Limpando…')
+                  void esquecerModelo()
+                    .then((relato) =>
+                      setTesteDaTranscricao(`${relato}\n\nPronto. Abra o áudio de novo — ele vai baixar limpo.`),
+                    )
+                    .catch((erro: unknown) => setTesteDaTranscricao(String(erro)))
+                }}
+              >
+                Limpar e baixar de novo
+              </button>
+              <button
+                type="button"
+                className="btn btn--sm"
+                onClick={() => {
+                  setTesteDaTranscricao('Perguntando ao servidor…')
+                  void conferirModelos()
+                    .then(setTesteDaTranscricao)
+                    .catch((erro: unknown) =>
+                      setTesteDaTranscricao(erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro)),
+                    )
+                }}
+              >
+                Testar o modelo
+              </button>
+            </div>
             <p className="field__hint">
-              Só pergunta ao servidor quais arquivos existem — alguns kilobytes, sem baixar o modelo.
+              Se a transcrição falhar sempre com a mesma mensagem, <strong>Limpar e baixar de novo</strong> joga fora
+              o que está guardado no navegador — um arquivo que entrou estragado volta igual em toda tentativa.
             </p>
             {testeDaTranscricao ? (
               <>

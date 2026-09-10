@@ -510,6 +510,46 @@ export async function conferirModelos(): Promise<string> {
   return linhas.join('\n')
 }
 
+/**
+ * Joga fora tudo o que foi guardado do modelo e recomeça do zero.
+ *
+ * A biblioteca guarda cada arquivo baixado no cache do navegador. Um arquivo
+ * que tenha entrado ali estragado — um download interrompido, por exemplo —
+ * volta igual em toda tentativa seguinte, **inclusive depois de trocar a
+ * versão do motor ou o formato pedido**. É a explicação de uma falha que não
+ * muda por mais que se mude o código em volta.
+ *
+ * Devolve o que foi encontrado e apagado, que também serve de diagnóstico.
+ */
+export async function esquecerModelo(): Promise<string> {
+  const linhas: string[] = []
+
+  if (typeof caches !== 'undefined') {
+    const nomes = await caches.keys()
+    linhas.push(`caches encontrados: ${nomes.length > 0 ? nomes.join(', ') : '(nenhum)'}`)
+    for (const nome of nomes) {
+      if (!/transformers|onnx|hugging|hf/i.test(nome)) continue
+      try {
+        const cache = await caches.open(nome)
+        const guardados = await cache.keys()
+        const doModelo = guardados.filter((pedido) => /whisper|onnx/i.test(pedido.url))
+        for (const pedido of doModelo) await cache.delete(pedido)
+        linhas.push(`  ${nome}: ${doModelo.length} arquivo(s) do modelo apagado(s) de ${guardados.length}`)
+      } catch (erro) {
+        linhas.push(`  ${nome}: não deu para limpar — ${(erro as Error).message?.slice(0, 60)}`)
+      }
+    }
+  } else {
+    linhas.push('este navegador não guarda o modelo em cache')
+  }
+
+  guardarLista(CHAVE_RECUSADAS, [])
+  guardarLista(CHAVE_ESCOLHA, [])
+  reconhecedor = null
+  linhas.push('histórico de tentativas zerado')
+  return linhas.join('\n')
+}
+
 /** Esquece o modelo carregado, devolvendo a memória ao aparelho. */
 export async function descartar(): Promise<void> {
   await reconhecedor?.dispose?.().catch(() => undefined)
