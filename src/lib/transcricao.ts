@@ -26,8 +26,16 @@ export class ErroDeTranscricao extends Error {
   }
 }
 
-/** O modelo usado. `base` é o equilíbrio entre caber no celular e acertar. */
-export const MODELO = 'onnx-community/whisper-base'
+/**
+ * Os acervos de onde o modelo pode vir, tentados nesta ordem.
+ *
+ * É o mesmo modelo (Whisper `base`) publicado em dois lugares. Nenhum dos dois
+ * é garantido: um acervo pode ser reorganizado, e a versão comprimida que
+ * pedimos (`q8`, gravada com o sufixo `_quantized`) pode não existir num deles.
+ * Tentar o segundo custa pouco e evita que a transcrição inteira caia por causa
+ * de um arquivo fora do lugar.
+ */
+export const MODELOS = ['onnx-community/whisper-base', 'Xenova/whisper-base']
 /** Tamanho aproximado do download, em megabytes, para avisar antes. */
 export const TAMANHO_MB_DA_TRANSCRICAO = 80
 
@@ -133,8 +141,19 @@ function comoErro(erro: unknown): ErroDeTranscricao {
       `${texto} — motor em ${pastaDoMotor()}`,
     )
   }
-  if (/404|not found/i.test(texto)) {
-    return new ErroDeTranscricao('Uma peça do modelo de transcrição não foi encontrada no servidor.', texto)
+  // A biblioteca escreve "Could not locate file" no lugar de dizer 404.
+  if (/could not locate|404|not found/i.test(texto)) {
+    return new ErroDeTranscricao(
+      'Uma peça do modelo de transcrição não existe no endereço esperado. Toque em "Ver detalhes" para ' +
+        'saber qual arquivo faltou.',
+      texto,
+    )
+  }
+  if (/unauthorized|forbidden|401|403/i.test(texto)) {
+    return new ErroDeTranscricao('O servidor do modelo de transcrição recusou o download.', texto)
+  }
+  if (/internal server|bad gateway|service unavailable|50\d/i.test(texto)) {
+    return new ErroDeTranscricao('O servidor do modelo de transcrição está fora do ar. Tente mais tarde.', texto)
   }
   if (/fetch|network|Failed to fetch|load/i.test(texto)) {
     return new ErroDeTranscricao(
@@ -143,7 +162,10 @@ function comoErro(erro: unknown): ErroDeTranscricao {
       texto,
     )
   }
-  return new ErroDeTranscricao('A transcrição falhou neste aparelho.', texto)
+  return new ErroDeTranscricao(
+    'A transcrição falhou neste aparelho. Toque em "Ver detalhes" para saber o motivo.',
+    texto,
+  )
 }
 
 /** Prepara (ou reaproveita) o reconhecedor. Baixa o modelo na primeira vez. */
@@ -172,17 +194,28 @@ async function pegarReconhecedor(aoAndar?: AoTranscrever): Promise<Reconhecedor>
     })
   }
 
-  try {
-    reconhecedor = await lib.pipeline('automatic-speech-recognition', MODELO, {
-      dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' },
-      device: 'wasm',
-      progress_callback: progresso,
-    })
-  } catch (erro) {
-    reconhecedor = null
-    throw comoErro(erro)
+  let ultimo: unknown = null
+  for (const modelo of MODELOS) {
+    pesos.clear()
+    try {
+      reconhecedor = await lib.pipeline('automatic-speech-recognition', modelo, {
+        // `q8` é a versão comprimida: cabe no celular e é o padrão para
+        // WebAssembly. Sem ela o download seria três vezes maior.
+        dtype: 'q8',
+        device: 'wasm',
+        progress_callback: progresso,
+      })
+      return reconhecedor
+    } catch (erro) {
+      reconhecedor = null
+      ultimo = erro
+      const texto = erro instanceof Error ? erro.message : String(erro)
+      // Só vale tentar o outro acervo quando o problema foi achar o arquivo.
+      if (!/could not locate|404|not found/i.test(texto)) break
+      console.warn('[transcrição] o acervo', modelo, 'não serviu; tentando o próximo —', texto)
+    }
   }
-  return reconhecedor
+  throw comoErro(ultimo)
 }
 
 /** Junta o texto que o modelo devolve, venha ele em pedaços ou inteiro. */

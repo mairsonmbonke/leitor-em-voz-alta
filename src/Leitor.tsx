@@ -140,6 +140,8 @@ export function Leitor() {
   /** A voz natural falhou: a mensagem para a tela e a explicação técnica. */
   const [falhaDaVoz, setFalhaDaVoz] = useState<{ mensagem: string; detalhe: string } | null>(null)
   const [verDetalhe, setVerDetalhe] = useState(false)
+  /** Explicação técnica de uma falha ao abrir um arquivo, para o "Ver detalhes". */
+  const [detalheDoRecado, setDetalheDoRecado] = useState<string | null>(null)
   /** Como desistir de um download de 60 MB que está demorando. */
   const baixadorRef = useRef<AbortController | null>(null)
   const [arquivo, setArquivo] = useState<string | null>(null)
@@ -542,6 +544,8 @@ export function Leitor() {
       cancelarTarefa()
       setAbrindo(true)
       setRecado(null)
+      setDetalheDoRecado(null)
+      setVerDetalhe(false)
 
       const controle = new AbortController()
       cancelador.current = controle
@@ -631,6 +635,9 @@ export function Leitor() {
           erro instanceof ErroDeAudio ||
           erro instanceof ErroDeTranscricao
         setRecado(conhecido ? erro.message : 'Não foi possível abrir este arquivo.')
+        // Quando existe explicação técnica, ela fica a um toque de distância.
+        if (erro instanceof ErroDeTranscricao && erro.detalhe) setDetalheDoRecado(erro.detalhe)
+        else if (!conhecido) setDetalheDoRecado(erro instanceof Error ? `${erro.name}: ${erro.message}` : String(erro))
       } finally {
         cancelador.current = null
         setTarefa(null)
@@ -1436,8 +1443,25 @@ export function Leitor() {
             </span>
           ) : null}
 
-          {verDetalhe && (falhaDaVoz?.detalhe || ultimaFalha()) ? (
-            <code className="leitor__detalhe">{falhaDaVoz?.detalhe || ultimaFalha()}</code>
+          {/* Falha ao abrir um arquivo (transcrição, OCR, PDF): o motivo real
+              fica guardado e aparece aqui, sem precisar do console. */}
+          {detalheDoRecado && aviso === recado ? (
+            <span className="leitor__aviso-acoes">
+              <button type="button" className="btn btn--sm btn--ghost" onClick={() => setVerDetalhe((v) => !v)}>
+                {verDetalhe ? 'Ocultar detalhes' : 'Ver detalhes'}
+              </button>
+              <button
+                type="button"
+                className="btn btn--sm btn--ghost"
+                onClick={() => void navigator.clipboard?.writeText(`${recado}\n${detalheDoRecado}`).catch(() => undefined)}
+              >
+                Copiar
+              </button>
+            </span>
+          ) : null}
+
+          {verDetalhe && (falhaDaVoz?.detalhe || detalheDoRecado || ultimaFalha()) ? (
+            <code className="leitor__detalhe">{falhaDaVoz?.detalhe || detalheDoRecado || ultimaFalha()}</code>
           ) : null}
         </div>
       ) : null}
